@@ -1,0 +1,44 @@
+TVS ACTIVITY DESK - QUICK START
+================================
+
+INSTALLING (ONE TIME ONLY)
+
+1. Double-click TVS-Activity-Desk-Setup.exe.
+2. Click Next, then Install.
+3. Leave "Launch TVS Activity Desk" selected and click Finish.
+
+No Python, internet connection, or technical setup is required.
+
+
+FIRST USE - SCHOOL ADMINISTRATOR
+
+The first person to open the app must be the designated school administrator.
+
+1. Enter the school name and administrator name.
+2. Create the master password.
+3. Store the master password in the school's approved secure location.
+4. Sign in with username: admin
+5. Open Users and create individual accounts for teachers and staff.
+
+The master password cannot be recovered if it is lost.
+
+
+EVERYDAY USE - TEACHERS AND STAFF
+
+1. Double-click TVS Activity Desk on the desktop.
+2. Sign in with the username and password supplied by the administrator.
+3. Choose a form, complete it, then use Save draft or Submit.
+
+
+BACKUPS
+
+An administrator should open Backup and save a copy to a separate USB drive
+or other school-approved storage every week.
+
+
+WINDOWS 7 NOTE
+
+Windows 7 must have Service Pack 1 and its normal Microsoft updates installed.
+If the program does not open, contact the school's computer administrator.
+Teachers should not install Python or change Windows system settings.
+

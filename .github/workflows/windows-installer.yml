@@ -1,0 +1,49 @@
+name: Build Windows 7-10 Installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  installer:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install 32-bit Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8.10"
+          architecture: "x86"
+          cache: "pip"
+
+      - name: Ensure Inno Setup is available
+        shell: powershell
+        run: |
+          $inno6 = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $inno7 = "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe"
+          if (-not (Test-Path $inno6) -and -not (Test-Path $inno7)) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Build and verify installer
+        shell: cmd
+        env:
+          TVS_PYTHON: ${{ env.pythonLocation }}\python.exe
+        run: windows\build_windows.bat
+
+      - name: Upload teacher installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: TVS-Activity-Desk-Windows-7-10
+          path: |
+            dist/installer/TVS-Activity-Desk-Setup.exe
+            dist/installer/TVS-Activity-Desk-Setup.exe.sha256.txt
+          if-no-files-found: error
+          retention-days: 30

@@ -13,6 +13,7 @@ ENV/
 # Packaging and installer output
 build/
 dist/
+windows/tvs.ico
 *.spec
 *.egg
 *.egg-info/
@@ -70,4 +71,3 @@ Desktop.ini
 *.temp
 *.bak
 *.orig
-

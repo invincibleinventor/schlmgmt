@@ -31,18 +31,39 @@ On macOS 27, do not use Apple's bundled `/usr/bin/python3`; its obsolete Tk 8.5 
 
 The first launch opens the secure workspace setup. Enter the school name and create the master password. The initial administrator username is `admin`. The password is intentionally unrecoverable; keep it in the school's approved password manager.
 
-## Windows 7 installer build
+## Installing on Windows 7-10
 
-Build on a Windows machine matching the target architecture:
+Teachers receive one file: `TVS-Activity-Desk-Setup.exe`.
 
-1. Install **Python 3.8.10** (the final Python release supporting Windows 7) and enable the Python launcher.
+1. Double-click the setup file.
+2. Click **Next**. Installation begins immediately with safe defaults.
+3. Leave **Launch TVS Activity Desk** selected and click **Finish**.
+
+The installer includes Python and every required library. It installs without an
+administrator password, creates desktop and Start Menu shortcuts automatically,
+and opens the first-time setup when finished. Windows 7 computers must have
+Service Pack 1 and their normal Microsoft updates installed.
+
+The designated school administrator should perform first-time setup and create
+individual accounts for teachers. A plain-language Quick Start guide is installed
+in the Start Menu.
+
+## Building the Windows installer
+
+Build on a Windows machine or VM:
+
+1. Install **32-bit Python 3.8.10** and enable the Python launcher.
 2. Install Inno Setup 6.
-3. Run `windows\build_windows.bat`.
+3. Double-click `windows\build_windows.bat`.
 4. Distribute `dist\installer\TVS-Activity-Desk-Setup.exe`.
 
-The installer is per-user and does not require administrator privileges. It supports Windows 7 SP1 and later. On first launch after installation, the in-app setup wizard requires the master password to be created before any data can be entered.
+The builder runs tests, creates a professional icon, makes a self-contained 32-bit
+application that runs on both 32-bit and 64-bit Windows, checks the packaged
+database/encryption runtime, builds the installer, and creates a SHA-256 checksum.
+See `windows\BUILDING.md` for the release checklist.
 
-Do not build the Windows 7 package using Python 3.9+ or a newer PyInstaller than the pinned version without separately validating it on Windows 7. For both 32-bit and 64-bit deployments, run the build once with each matching Python 3.8.10 architecture and label the installers accordingly.
+Do not build the legacy package with Python 3.9+ or unpinned packaging tools.
+Validate every release on clean Windows 7 SP1 and Windows 10 computers.
 
 ## Operating notes
 
@@ -60,4 +81,3 @@ python -m unittest discover -v
 ```
 
 The tests cover encryption integrity, authentication, key re-wrapping during password resets, access control, all requested form counts, database backups, and both export formats.
-
