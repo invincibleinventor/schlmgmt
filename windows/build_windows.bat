@@ -23,12 +23,7 @@ if defined TVS_PYTHON (
 
 if not defined PYTHON_EXE goto :wrongpython
 "%PYTHON_EXE%" -c "import sys,struct; assert sys.version_info[:2] == (3,8) and struct.calcsize('P') == 4" >nul 2>nul
-if errorlevel 1 (
-  :wrongpython
-  echo ERROR: 32-bit Python 3.8.10 is required for the universal
-  echo Windows 7-10 package. It was not found by the Python launcher.
-  goto :failed
-)
+if errorlevel 1 goto :wrongpython
 
 if not exist ".venv-win32\Scripts\python.exe" (
   echo Creating the isolated build environment...
@@ -110,6 +105,11 @@ pause
 :success
 endlocal
 exit /b 0
+
+:wrongpython
+echo ERROR: 32-bit Python 3.8.10 is required for the universal
+echo Windows 7-10 package. It was not found by the Python launcher.
+goto :failed
 
 :failed
 echo.

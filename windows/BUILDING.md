@@ -28,3 +28,9 @@ Python 3.8 applications.
 For the smoothest Windows warning experience, sign both the application and
 installer with the school's trusted Authenticode certificate before distribution.
 
+## Build without preparing a Windows PC
+
+In GitHub, open **Actions**, choose **Build Windows 7-10 Installer**, and select
+**Run workflow**. The same verified build also runs after changes are pushed to
+`main`. Download the `TVS-Activity-Desk-Windows-7-10` artifact and give teachers
+only `TVS-Activity-Desk-Setup.exe`.

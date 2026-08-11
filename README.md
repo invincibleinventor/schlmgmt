@@ -62,6 +62,11 @@ application that runs on both 32-bit and 64-bit Windows, checks the packaged
 database/encryption runtime, builds the installer, and creates a SHA-256 checksum.
 See `windows\BUILDING.md` for the release checklist.
 
+For the easiest repeatable build, open the repository's **Actions** tab, choose
+**Build Windows 7-10 Installer**, and click **Run workflow**. Download the
+`TVS-Activity-Desk-Windows-7-10` artifact when it finishes; it contains the one
+setup file to give teachers and its checksum.
+
 Do not build the legacy package with Python 3.9+ or unpinned packaging tools.
 Validate every release on clean Windows 7 SP1 and Windows 10 computers.
 

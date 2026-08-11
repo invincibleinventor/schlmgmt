@@ -32,6 +32,7 @@ class WindowsPackagingTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "windows-installer.yml").read_text(encoding="utf-8")
         self.assertIn('architecture: "x86"', workflow)
         self.assertIn('python-version: "3.8.10"', workflow)
+        self.assertIn("- main", workflow)
         self.assertIn("TVS-Activity-Desk-Setup.exe", workflow)
         self.assertIn("actions/upload-artifact@v4", workflow)
 
