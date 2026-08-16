@@ -46,7 +46,7 @@ python -m pip install -r requirements-desktop.txt
 if errorlevel 1 goto :failed
 
 echo Running automated tests...
-python -m unittest discover -q
+python -m unittest discover -q -s tests
 if errorlevel 1 goto :failed
 
 echo Creating application icon...
