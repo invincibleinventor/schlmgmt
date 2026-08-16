@@ -1,0 +1,22 @@
+{% extends 'desk/base.html' %}
+{% block title %}Secure setup · {{ app_name }}{% endblock %}
+{% block content %}
+  <section class="auth-shell setup-shell">
+    <div class="auth-intro">
+      <div class="auth-logo">TVS</div>
+      <span class="eyebrow">First-time setup</span>
+      <h1>Create the school workspace</h1>
+      <p>This page works once. The administrator created here manages staff accounts, forms, exports and backups.</p>
+      <div class="security-note">
+        <strong>Before continuing</strong>
+        <p>Use the setup token saved in your cloud deployment. Store the master password safely; it cannot be recovered from the database.</p>
+      </div>
+    </div>
+    <form method="post" class="auth-card" novalidate>
+      {% csrf_token %}
+      <h2>Workspace details</h2>
+      {% include 'desk/_form_fields.html' %}
+      <button class="button button-primary button-block" type="submit">Create secure workspace</button>
+    </form>
+  </section>
+{% endblock %}

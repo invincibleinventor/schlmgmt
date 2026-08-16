@@ -1,0 +1,37 @@
+{% extends 'desk/base.html' %}
+{% block title %}Dashboard · {{ app_name }}{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+  <section class="stat-grid" aria-label="Record summary">
+    <article class="stat-card"><span>Total records</span><strong>{{ counts.total }}</strong></article>
+    <article class="stat-card stat-success"><span>Submitted</span><strong>{{ counts.submitted }}</strong></article>
+    <article class="stat-card stat-warning"><span>Drafts</span><strong>{{ counts.draft }}</strong></article>
+  </section>
+
+  <section class="section-heading">
+    <div><span class="eyebrow">Assigned workspace</span><h2>Forms</h2></div>
+    <form method="get" class="search-form" role="search">
+      <label class="sr-only" for="form-search">Search forms</label>
+      <input id="form-search" name="q" type="search" value="{{ query }}" placeholder="Search forms">
+      <button class="button button-secondary" type="submit">Search</button>
+    </form>
+  </section>
+
+  {% for role_name, modules in module_groups %}
+    <section class="module-section">
+      <h3>{{ role_name }}</h3>
+      <div class="module-grid">
+        {% for module in modules %}
+          <article class="module-card">
+            <span class="module-number">{{ forloop.counter|stringformat:'02d' }}</span>
+            <h4>{{ module.name }}</h4>
+            <p>{{ module.fields|length }} fields · Draft or submit</p>
+            <a class="button button-primary" href="{% url 'record_new' module.key %}">New entry</a>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% empty %}
+    <div class="empty-state"><h2>No forms found</h2><p>Try a different search or ask the administrator whether your forms are enabled.</p></div>
+  {% endfor %}
+{% endblock %}

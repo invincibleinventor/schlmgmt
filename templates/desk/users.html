@@ -1,0 +1,26 @@
+{% extends 'desk/base.html' %}
+{% block title %}Users · {{ app_name }}{% endblock %}
+{% block page_title %}Users{% endblock %}
+{% block content %}
+  <div class="admin-grid">
+    <section class="card">
+      <span class="eyebrow">Staff access</span><h2>Create account</h2>
+      <p class="muted">Create one account per staff member and assign only the role they need.</p>
+      <form method="post" novalidate>{% csrf_token %}{% include 'desk/_form_fields.html' %}<button class="button button-primary button-block" type="submit">Create account</button></form>
+    </section>
+    <section class="card user-list">
+      <div class="section-heading compact"><div><span class="eyebrow">Directory</span><h2>{{ users|length }} account{{ users|length|pluralize }}</h2></div></div>
+      {% for account in users %}
+        <article class="user-row">
+          <div class="avatar" aria-hidden="true">{{ account.desk_profile.display_name|first|upper }}</div>
+          <div class="user-details"><strong>{{ account.desk_profile.display_name }}</strong><span>{{ account.username }} · {{ account.desk_profile.get_role_display }}</span></div>
+          <span class="status {% if account.is_active %}status-submitted{% else %}status-inactive{% endif %}">{% if account.is_active %}Active{% else %}Inactive{% endif %}</span>
+          <div class="row-actions">
+            <a class="text-link" href="{% url 'reset_password' account.id %}">Reset password</a>
+            {% if account != request.user %}<form method="post" action="{% url 'toggle_user' account.id %}">{% csrf_token %}<button class="text-button" type="submit" data-confirm="{% if account.is_active %}Deactivate{% else %}Activate{% endif %} this account?">{% if account.is_active %}Deactivate{% else %}Activate{% endif %}</button></form>{% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  </div>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends 'desk/base.html' %}
+{% block title %}{{ module.name }} · {{ app_name }}{% endblock %}
+{% block page_title %}{% if record %}Edit{% else %}New{% endif %} {{ module.name }}{% endblock %}
+{% block page_actions %}<a class="button button-secondary" href="{% url 'records' %}">Back to records</a>{% endblock %}
+{% block content %}
+  <form method="post" class="card record-form" novalidate>
+    {% csrf_token %}
+    <div class="form-intro">
+      <div><span class="eyebrow">{{ module_role_label }}</span><h2>{{ module.name }}</h2></div>
+      {% if record %}<span class="status status-{{ record.status }}">{{ record.get_status_display }}</span>{% endif %}
+    </div>
+    <p class="muted">You may save an incomplete draft. Fields marked “Required when submitting” must be completed before submission.</p>
+    <div class="form-grid">{% include 'desk/_form_fields.html' %}</div>
+    <div class="sticky-actions">
+      <button class="button button-secondary" type="submit" name="action" value="draft">Save draft</button>
+      <button class="button button-primary" type="submit" name="action" value="submit">Submit record</button>
+    </div>
+  </form>
+{% endblock %}

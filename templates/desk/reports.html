@@ -1,0 +1,19 @@
+{% extends 'desk/base.html' %}
+{% block title %}Reports & exports · {{ app_name }}{% endblock %}
+{% block page_title %}Reports &amp; exports{% endblock %}
+{% block content %}
+  <section class="card narrow-card">
+    <span class="eyebrow">Spreadsheet-ready reports</span>
+    <h2>Export activity records</h2>
+    <p class="muted">Choose optional filters. Administrators export all matching records; staff export only their own.</p>
+    <form method="get" class="report-form">
+      <div class="field"><label for="report-module">Form</label><select id="report-module" name="module"><option value="">All forms</option>{% for module in modules %}<option value="{{ module.key }}">{{ module.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="report-status">Status</label><select id="report-status" name="status"><option value="">All statuses</option><option value="submitted">Submitted</option><option value="draft">Draft</option></select></div>
+      <div class="button-row">
+        <button class="button button-primary" type="submit" formaction="{% url 'export_records' 'xlsx' %}">Download XLSX</button>
+        <button class="button button-secondary" type="submit" formaction="{% url 'export_records' 'csv' %}">Download CSV</button>
+      </div>
+    </form>
+    <div class="info-strip"><strong>Excel-safe exports</strong><span>Text that begins with a spreadsheet formula character is neutralised automatically.</span></div>
+  </section>
+{% endblock %}

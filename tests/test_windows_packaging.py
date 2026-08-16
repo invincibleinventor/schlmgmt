@@ -26,6 +26,7 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertIn("py -3.8-32", builder)
         self.assertIn("--package-check", builder)
         self.assertIn("python -m unittest discover", builder)
+        self.assertIn("requirements-desktop.txt", builder)
         self.assertIn("TVS-Activity-Desk-Setup.exe", builder)
 
     def test_automated_windows_build_uploads_the_installer(self):

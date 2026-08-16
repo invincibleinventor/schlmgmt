@@ -1,0 +1,6 @@
+{% extends 'desk/base.html' %}
+{% block title %}Backup · {{ app_name }}{% endblock %}
+{% block page_title %}Backup{% endblock %}
+{% block content %}
+  <section class="card narrow-card"><span class="eyebrow">Disaster recovery</span><h2>Download encrypted backup</h2><p>Creates a portable backup containing accounts, form controls and encrypted records. Store it separately from the cloud account.</p><div class="info-strip"><strong>Encryption key fingerprint</strong><code>{{ fingerprint }}</code></div><form method="post" action="{% url 'backup_download' %}">{% csrf_token %}<button class="button button-primary" type="submit">Download .tvsbackup</button></form><hr><h3>Critical requirement</h3><p class="muted">The backup can only be recovered with the same <code>TVS_DATA_KEY</code>. Keep that Koyeb secret in the school’s password manager and never paste it into email or chat.</p></section>
+{% endblock %}

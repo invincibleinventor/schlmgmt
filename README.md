@@ -1,88 +1,81 @@
 # TVS Activity Desk
 
-TVS Activity Desk is a single-computer, offline-first desktop application for school activity records. It replaces the defunct mobile DMS shown in the supplied screenshots while retaining its role-based forms, draft/submission workflow, user administration and reporting.
+TVS Activity Desk is a secure, responsive Django website for school activity
+records. It keeps the original role-specific workflows while allowing teachers
+to use it from any current browser without installing software.
 
-## What is included
+## Included
 
-- 58 role-specific forms: Class Teacher (5), Catalyst Member (14), Office (7), and Academic Supervisor (32)
-- first-run master-password setup
-- local role-based accounts with temporary lockout after repeated failures
-- PBKDF2-HMAC-SHA256 password protection (600,000 iterations)
-- AES-256-GCM authenticated encryption for every form payload
-- drafts, submitted records, editing, search, and audit history
-- CSV and styled XLSX export with spreadsheet-formula injection protection
-- encrypted-data backups (`.tvsbackup`)
-- a Windows installer definition and pinned legacy-compatible build toolchain
+- 58 forms across Class Teacher, Catalyst Member, Office and Academic Supervisor
+- one-time, token-protected master administrator setup
+- Argon2 password hashing and five-attempt account lockout
+- server-side sessions, CSRF protection and role/record ownership enforcement
+- AES-256-GCM encryption for every form payload
+- drafts, submitted records, editing, search and form availability controls
+- user creation, password resets, account activation and audit history
+- formula-safe CSV and styled XLSX exports
+- encrypted downloadable backups and a tested recovery command
+- PostgreSQL production support and SQLite for local development
+- responsive layouts for phones, tablets and desktop browsers
 
-The application never requires an internet connection. Its database is stored under the signed-in Windows user's Local AppData folder, not beside the executable.
+## Run the website locally
 
-## Run from source
+Python 3.10 or newer is required.
 
-```text
-python -m pip install -r requirements.txt
-python app.py
+```bash
+python -m venv .venv-web
+source .venv-web/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver
 ```
 
-On macOS 27, do not use Apple's bundled `/usr/bin/python3`; its obsolete Tk 8.5 runtime may display an unpainted window. Launch with:
+Open `http://127.0.0.1:8000`. For local setup, the default deployment token is
+`local-setup`. Local development uses SQLite and a development-only encryption
+key. Do not use those defaults on a public server.
 
-```text
-./run_macos.command
+Run the complete test suite with:
+
+```bash
+python manage.py test desk tests
 ```
 
-The first launch opens the secure workspace setup. Enter the school name and create the master password. The initial administrator username is `admin`. The password is intentionally unrecoverable; keep it in the school's approved password manager.
+## Deploy to the cloud
 
-## Installing on Windows 7-10
+Use [DEPLOY.md](DEPLOY.md). It gives a field-by-field Koyeb setup using a free web
+service and managed PostgreSQL database, explains every required secret, covers
+first-run setup, updates, custom domains, backups, recovery and common failures.
 
-Teachers receive one file: `TVS-Activity-Desk-Setup.exe`.
+The production service starts through `Procfile`, automatically collects static
+files, applies database migrations and launches Gunicorn. `/health/` is the
+provider health-check endpoint.
 
-1. Double-click the setup file.
-2. Click **Next**. Installation begins immediately with safe defaults.
-3. Leave **Launch TVS Activity Desk** selected and click **Finish**.
+Koyeb's free limits can change. Confirm both the web and database instance show
+`$0` in the control panel before deployment.
 
-The installer includes Python and every required library. It installs without an
-administrator password, creates desktop and Start Menu shortcuts automatically,
-and opens the first-time setup when finished. Windows 7 computers must have
-Service Pack 1 and their normal Microsoft updates installed.
+## Security operations
 
-The designated school administrator should perform first-time setup and create
-individual accounts for teachers. A plain-language Quick Start guide is installed
-in the Start Menu.
+- Keep `DJANGO_SECRET_KEY`, `TVS_DATA_KEY`, `TVS_SETUP_TOKEN` and `DATABASE_URL`
+  only in Koyeb Secrets and the school's password manager.
+- Never change `TVS_DATA_KEY` after records exist. Losing it makes encrypted
+  records and backups unrecoverable.
+- Give every staff member an individual account. Never share the administrator
+  login.
+- Download an encrypted backup at least weekly and store it outside Koyeb.
+- Use only HTTPS in production. The production configuration enforces HTTPS,
+  secure cookies, HSTS, frame denial and content-type protection.
 
-## Building the Windows installer
+## Legacy desktop edition
 
-Build on a Windows machine or VM:
-
-1. Install **32-bit Python 3.8.10** and enable the Python launcher.
-2. Install Inno Setup 6.
-3. Double-click `windows\build_windows.bat`.
-4. Distribute `dist\installer\TVS-Activity-Desk-Setup.exe`.
-
-The builder runs tests, creates a professional icon, makes a self-contained 32-bit
-application that runs on both 32-bit and 64-bit Windows, checks the packaged
-database/encryption runtime, builds the installer, and creates a SHA-256 checksum.
-See `windows\BUILDING.md` for the release checklist.
-
-For the easiest repeatable build, open the repository's **Actions** tab, choose
-**Build Windows 7-10 Installer**, and click **Run workflow**. Download the
-`TVS-Activity-Desk-Windows-7-10` artifact when it finishes; it contains the one
-setup file to give teachers and its checksum.
-
-Do not build the legacy package with Python 3.9+ or unpinned packaging tools.
-Validate every release on clean Windows 7 SP1 and Windows 10 computers.
-
-## Operating notes
-
-- Administrators can create accounts, assign one of the four operational roles, reset passwords, deactivate accounts, enable/disable individual forms, view all records, view the audit log, export reports and create backups.
-- Operational users see only their assigned forms and their own records.
-- Drafts may be incomplete. Submission enforces the form's required fields and validates dates/numbers.
-- CSV files use UTF-8 with BOM for reliable Excel opening. XLSX is the preferred report format.
-- Backups contain encrypted payloads and password-protected key material. Copy backups to a physically separate, access-controlled drive.
-- Uninstalling the program deliberately retains the local database in `%LOCALAPPDATA%\TVSActivityDesk` to prevent accidental data loss.
-
-## Tests
+The Windows 7–10 offline desktop edition remains available for installations
+that cannot use the cloud. Its dependencies are in `requirements-desktop.txt`,
+and its installer is built by `windows\build_windows.bat`.
 
 ```text
-python -m unittest discover -v
+py -3.8-32 -m pip install -r requirements-desktop.txt
+py -3.8-32 app.py
 ```
 
-The tests cover encryption integrity, authentication, key re-wrapping during password resets, access control, all requested form counts, database backups, and both export formats.
+See `windows\BUILDING.md` for the legacy installer release process. The web and
+desktop editions use the same 58 form definitions, encryption primitives and
+spreadsheet-safety rules, but they keep separate databases.

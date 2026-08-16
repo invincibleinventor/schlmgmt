@@ -1,0 +1,69 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#173b65">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'desk/app.css' %}">
+  <script src="{% static 'desk/app.js' %}" defer></script>
+</head>
+<body class="{% if not request.user.is_authenticated or setup_mode %}auth-page{% endif %}">
+  {% if request.user.is_authenticated and not setup_mode %}
+    <header class="mobile-header">
+      <a class="mobile-brand" href="{% url 'dashboard' %}"><span>TVS</span> Activity Desk</a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav">Menu</button>
+    </header>
+    <aside class="sidebar" id="primary-nav">
+      <a class="brand" href="{% url 'dashboard' %}">
+        <strong>TVS</strong>
+        <span>Activity Desk</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="{% url 'dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+        <a href="{% url 'records' %}" {% if request.resolver_match.url_name == 'records' or request.resolver_match.url_name == 'record_edit' or request.resolver_match.url_name == 'record_new' %}aria-current="page"{% endif %}>Records</a>
+        <a href="{% url 'reports' %}" {% if request.resolver_match.url_name == 'reports' %}aria-current="page"{% endif %}>Reports &amp; exports</a>
+        {% if current_profile.role == 'administrator' %}
+          <span class="nav-label">Administration</span>
+          <a href="{% url 'users' %}" {% if request.resolver_match.url_name == 'users' or request.resolver_match.url_name == 'reset_password' %}aria-current="page"{% endif %}>Users</a>
+          <a href="{% url 'form_controls' %}" {% if request.resolver_match.url_name == 'form_controls' %}aria-current="page"{% endif %}>Form controls</a>
+          <a href="{% url 'audit_log' %}" {% if request.resolver_match.url_name == 'audit_log' %}aria-current="page"{% endif %}>Audit log</a>
+          <a href="{% url 'backup' %}" {% if request.resolver_match.url_name == 'backup' %}aria-current="page"{% endif %}>Backup</a>
+        {% endif %}
+      </nav>
+      <div class="account-panel">
+        <strong>{{ current_profile.display_name }}</strong>
+        <span>{{ current_profile.get_role_display }}</span>
+        <a class="account-link" href="{% url 'change_password' %}">Change password</a>
+        <form action="{% url 'logout' %}" method="post">
+          {% csrf_token %}
+          <button class="nav-signout" type="submit">Sign out</button>
+        </form>
+      </div>
+    </aside>
+    <button class="nav-scrim" type="button" aria-label="Close navigation" hidden></button>
+  {% endif %}
+
+  <main class="{% if request.user.is_authenticated and not setup_mode %}workspace{% else %}auth-workspace{% endif %}">
+    {% if request.user.is_authenticated and not setup_mode %}
+      <header class="page-header">
+        <div>
+          <span class="eyebrow">{{ school_name }}</span>
+          <h1>{% block page_title %}Activity Desk{% endblock %}</h1>
+        </div>
+        {% block page_actions %}{% endblock %}
+      </header>
+    {% endif %}
+
+    {% if messages %}
+      <div class="messages" aria-live="polite">
+        {% for message in messages %}<div class="message message-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}
+      </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

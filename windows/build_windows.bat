@@ -42,7 +42,7 @@ if errorlevel 1 (
 echo Installing pinned build dependencies...
 python -m pip install --upgrade "pip<24.1"
 if errorlevel 1 goto :failed
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-desktop.txt
 if errorlevel 1 goto :failed
 
 echo Running automated tests...

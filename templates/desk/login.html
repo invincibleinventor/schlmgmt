@@ -1,0 +1,21 @@
+{% extends 'desk/base.html' %}
+{% block title %}Sign in · {{ app_name }}{% endblock %}
+{% block content %}
+  <section class="auth-shell login-shell">
+    <div class="auth-intro">
+      <div class="auth-logo">TVS</div>
+      <span class="eyebrow">{{ school_name }}</span>
+      <h1>Activity Desk</h1>
+      <p>Secure school activity records, forms and reports in one place.</p>
+    </div>
+    <form method="post" class="auth-card" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      <h2>Sign in</h2>
+      <p class="muted">Use the account provided by your administrator.</p>
+      {% include 'desk/_form_fields.html' %}
+      <button class="button button-primary button-block" type="submit">Sign in</button>
+      <small class="auth-footer">Version {{ app_version }} · Encrypted school records</small>
+    </form>
+  </section>
+{% endblock %}

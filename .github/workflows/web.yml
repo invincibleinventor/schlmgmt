@@ -1,0 +1,44 @@
+name: Test Django Web App
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: "ci-only-django-secret-with-more-than-fifty-characters-123456789"
+      TVS_DATA_KEY: "VFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFQ="
+      TVS_SETUP_TOKEN: "ci-only-setup-token"
+      DJANGO_ALLOWED_HOSTS: "testserver,localhost"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "https://testserver"
+      TVS_ALLOW_SQLITE_PRODUCTION: "true"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate migrations and deployment settings
+        run: |
+          python manage.py makemigrations --check --dry-run
+          python manage.py check --deploy
+
+      - name: Run all tests
+        run: python manage.py test desk tests
+
+      - name: Build static assets
+        run: python manage.py collectstatic --noinput

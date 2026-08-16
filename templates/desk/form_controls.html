@@ -1,0 +1,13 @@
+{% extends 'desk/base.html' %}
+{% block title %}Form controls · {{ app_name }}{% endblock %}
+{% block page_title %}Form controls{% endblock %}
+{% block content %}
+  <div class="card"><div class="form-intro"><div><span class="eyebrow">Availability</span><h2>Enable or disable staff forms</h2></div></div><p class="muted">Disabling a form prevents new staff entries. Existing records and administrator access are retained.</p></div>
+  {% for role_name, modules in module_groups %}
+    <section class="control-section"><h2>{{ role_name }}</h2><div class="control-grid">
+      {% for module, enabled in modules %}
+        <article class="control-row" id="{{ module.key }}"><div><strong>{{ module.name }}</strong><span>{{ module.fields|length }} fields</span></div><form method="post">{% csrf_token %}<input type="hidden" name="module_key" value="{{ module.key }}"><input type="hidden" name="enabled" value="{% if enabled %}false{% else %}true{% endif %}"><button class="toggle {% if enabled %}toggle-on{% endif %}" type="submit" aria-label="{% if enabled %}Disable{% else %}Enable{% endif %} {{ module.name }}" aria-pressed="{{ enabled|yesno:'true,false' }}"><span></span></button></form></article>
+      {% endfor %}
+    </div></section>
+  {% endfor %}
+{% endblock %}
