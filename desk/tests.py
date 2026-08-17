@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch
@@ -14,7 +15,7 @@ from django.urls import reverse
 from tvs_dms.forms import MODULES
 
 from .models import ActivityRecord, AuditLog, ModuleControl, Profile, SiteSettings
-from .store import get_store
+from .store import _get_or_initialize_firebase_app, get_store
 
 
 @override_settings(
@@ -40,6 +41,43 @@ class WebWorkflowTests(TestCase):
             must_change_password=False,
         )
         return user
+
+    def test_concurrent_firebase_initialization_creates_one_named_app(self):
+        class FakeFirebaseAdmin:
+            apps: ClassVar[dict[str, object]] = {}
+            initialize_count = 0
+
+            @classmethod
+            def get_app(cls, name):
+                if name not in cls.apps:
+                    raise ValueError("missing")
+                return cls.apps[name]
+
+            @classmethod
+            def initialize_app(cls, credential, *, name):
+                cls.initialize_count += 1
+                cls.apps[name] = credential
+                return credential
+
+        class FakeCredentials:
+            @staticmethod
+            def Certificate(service_account):
+                return service_account
+
+        service_account = {"project_id": "test-project"}
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            apps = list(
+                executor.map(
+                    lambda _: _get_or_initialize_firebase_app(
+                        FakeFirebaseAdmin,
+                        FakeCredentials,
+                        service_account,
+                    ),
+                    range(16),
+                )
+            )
+        self.assertEqual(1, FakeFirebaseAdmin.initialize_count)
+        self.assertTrue(all(app is service_account for app in apps))
 
     def test_first_run_requires_deployment_token_and_creates_argon2_admin(self):
         self.assertRedirects(self.client.get("/"), reverse("setup"))

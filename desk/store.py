@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import threading
 import uuid
 from datetime import timedelta
 from functools import lru_cache
@@ -21,6 +22,8 @@ from tvs_dms.forms import ROLE_LABELS
 from .domain import AuditData, ProfileData, RecordData, UserData
 from .models import ActivityRecord, AuditLog, ModuleControl, Profile, SiteSettings
 
+_FIREBASE_APP_LOCK = threading.Lock()
+
 
 class AlreadyInitialized(Exception):
     pass
@@ -28,6 +31,19 @@ class AlreadyInitialized(Exception):
 
 class DuplicateUsername(Exception):
     pass
+
+
+def _get_or_initialize_firebase_app(firebase_admin, credentials, service_account: dict[str, Any]):
+    """Return one named Firebase app even when cold-start requests race."""
+    app_name = f"tvs-activity-desk-{service_account['project_id']}"
+    with _FIREBASE_APP_LOCK:
+        try:
+            return firebase_admin.get_app(app_name)
+        except ValueError:
+            return firebase_admin.initialize_app(
+                credentials.Certificate(service_account),
+                name=app_name,
+            )
 
 
 def validate_restore_payload(payload: dict[str, Any]) -> None:
@@ -335,10 +351,7 @@ class FirestoreStore:
             raise ImproperlyConfigured("FIREBASE_SERVICE_ACCOUNT_JSON must contain valid JSON.") from exc
         if service_account.get("type") != "service_account" or not service_account.get("project_id"):
             raise ImproperlyConfigured("FIREBASE_SERVICE_ACCOUNT_JSON is not a Firebase service account key.")
-        try:
-            app = firebase_admin.get_app()
-        except ValueError:
-            app = firebase_admin.initialize_app(credentials.Certificate(service_account))
+        app = _get_or_initialize_firebase_app(firebase_admin, credentials, service_account)
         self.db = firestore.client(app=app)
         self.firestore = firestore
         self._school_name: str | None = None
