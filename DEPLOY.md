@@ -164,6 +164,11 @@ trailing slash. Vercel issues and renews HTTPS certificates automatically.
 
 ## Common failures
 
+- **Vercel reports Ready but every URL is a platform 404:** inspect the build
+  duration. If it finished almost instantly and did not install Python, open
+  **Project Settings → Build and Deployment** and set **Framework Preset** to
+  **Django**, then redeploy. From an authenticated CLI, the equivalent command
+  is `vercel project update tvs-activity-desk --framework django`.
 - **Build reports a missing variable:** confirm all six variables from step 3
   exist in Vercel and are enabled for the environment being built.
 - **Firebase JSON is invalid:** rerun `tools/prepare_vercel_env.py` using the
