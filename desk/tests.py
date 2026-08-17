@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import ClassVar
+from unittest.mock import patch
 
 from django.contrib.auth.hashers import identify_hasher
 from django.contrib.auth.models import User
@@ -12,6 +14,7 @@ from django.urls import reverse
 from tvs_dms.forms import MODULES
 
 from .models import ActivityRecord, AuditLog, ModuleControl, Profile, SiteSettings
+from .store import get_store
 
 
 @override_settings(
@@ -19,7 +22,7 @@ from .models import ActivityRecord, AuditLog, ModuleControl, Profile, SiteSettin
     TVS_DATA_KEY="VFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFQ=",
 )
 class WebWorkflowTests(TestCase):
-    setup_values = {
+    setup_values: ClassVar[dict[str, str]] = {
         "school_name": "Test School",
         "display_name": "System Administrator",
         "username": "admin",
@@ -62,6 +65,19 @@ class WebWorkflowTests(TestCase):
         self.assertIsNotNone(user.desk_profile.locked_until)
         response = self.client.post(reverse("login"), {"username": user.username, "password": "TeacherPass123!"})
         self.assertContains(response, "temporarily locked")
+
+    def test_deactivating_user_revokes_their_signed_session(self):
+        teacher = self.create_user("teacher", "class_teacher")
+        admin = self.create_user("admin", "administrator")
+        self.client.post(reverse("login"), {"username": teacher.username, "password": "TeacherPass123!"})
+        self.assertEqual(200, self.client.get(reverse("dashboard")).status_code)
+
+        admin_client = Client()
+        admin_client.force_login(admin)
+        admin_client.post(reverse("toggle_user", args=(teacher.id,)))
+
+        response = self.client.get(reverse("dashboard"))
+        self.assertRedirects(response, f"{reverse('login')}?next={reverse('dashboard')}")
 
     def test_role_workflow_encrypts_payload_and_enforces_ownership(self):
         teacher = self.create_user("teacher_one", "class_teacher")
@@ -164,12 +180,37 @@ class WebWorkflowTests(TestCase):
         self.assertTrue(User.objects.get(username="office_user").check_password("OfficePassword123!"))
         self.assertTrue(AuditLog.objects.filter(action="backup_restored").exists())
 
+    def test_invalid_replace_backup_is_rejected_before_existing_data_is_deleted(self):
+        existing = self.create_user("existing_admin", "administrator")
+        invalid_payload = {
+            "school_name": "Broken Backup",
+            "users": [
+                {
+                    "username": "restored_admin",
+                    "display_name": "Restored Admin",
+                    "role": "administrator",
+                    "password_hash": "not-a-password-hash",
+                }
+            ],
+            "module_controls": [],
+            "records": [],
+        }
+        with self.assertRaisesRegex(ValueError, "unsupported password hash"):
+            get_store().restore(invalid_payload, replace=True)
+        self.assertTrue(User.objects.filter(pk=existing.pk).exists())
+
     def test_health_and_all_requested_modules(self):
         self.assertEqual(58, len(MODULES))
         response = self.client.get(reverse("health"))
         self.assertJSONEqual(response.content, {"ok": True, "service": "tvs-activity-desk"})
         self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
         self.assertIn("camera=()", response["Permissions-Policy"])
+
+    def test_vercel_preview_is_closed_by_default(self):
+        with patch.dict("os.environ", {"VERCEL_ENV": "preview"}):
+            response = self.client.get(reverse("health"))
+        self.assertEqual(404, response.status_code)
+        self.assertContains(response, "Preview deployment disabled", status_code=404)
 
     def test_state_changing_views_enforce_csrf(self):
         admin = self.create_user("admin", "administrator")

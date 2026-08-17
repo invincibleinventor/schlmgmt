@@ -17,7 +17,7 @@ jobs:
       TVS_SETUP_TOKEN: "ci-only-setup-token"
       DJANGO_ALLOWED_HOSTS: "testserver,localhost"
       DJANGO_CSRF_TRUSTED_ORIGINS: "https://testserver"
-      TVS_ALLOW_SQLITE_PRODUCTION: "true"
+      FIREBASE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"ci-only"}'
 
     steps:
       - name: Check out source

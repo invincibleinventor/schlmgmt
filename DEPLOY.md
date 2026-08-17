@@ -1,180 +1,199 @@
-# Deploy TVS Activity Desk on Koyeb
+# Deploy TVS Activity Desk with Vercel and Firebase
 
-This is the production path for the web version. It uses one Koyeb web service
-and one Koyeb PostgreSQL database. Teachers use a normal HTTPS website; they do
-not install Python or any desktop software.
+This is the no-cost cloud path for the school website:
 
-Koyeb's free offering changes over time. At the time this guide was updated,
-accounts could create one free web service and one free PostgreSQL database.
-Confirm that the instance selector says **Free / $0** before creating either
-resource. A payment method may be requested for account verification. Never
-select a `small`, `eco`, or larger paid instance unless the school approves it.
+- Vercel runs the Django application and serves static files over HTTPS.
+- Firebase Cloud Firestore stores accounts, form controls, encrypted records,
+  and audit history.
+- Teachers only open the website. They install nothing.
 
-Official references: [Koyeb Django deployment](https://www.koyeb.com/docs/deploy/django),
-[Git build and Procfile behavior](https://www.koyeb.com/docs/build-and-deploy/build-from-git),
-[managed database limits](https://www.koyeb.com/docs/databases), and
-[Koyeb Secrets](https://www.koyeb.com/docs/reference/secrets).
+Firebase's Spark plan needs no payment method. Its current free Firestore quota
+is 1 GiB stored data, 50,000 document reads per day, 20,000 writes per day, and
+20,000 deletes per day. Vercel's Hobby plan is free but its terms limit it to
+personal/non-commercial use; confirm that the school's use qualifies. Neither
+free plan has a production SLA, so download the encrypted app backup weekly.
 
-## 1. Put the repository on GitHub
+Official references: [Vercel's zero-configuration Django support](https://vercel.com/changelog/zero-configuration-django-support),
+[Vercel Hobby plan](https://vercel.com/docs/plans/hobby),
+[Firebase Spark plan](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans),
+[Firestore free quota](https://firebase.google.com/docs/firestore/quotas), and
+[Firebase Admin SDK setup](https://firebase.google.com/docs/admin/setup).
 
-Push the current `main` branch to a private GitHub repository. In Koyeb, sign in
-with the GitHub account that can read that repository.
+## 1. Create the free Firebase database
 
-## 2. Generate three secrets
+1. Open [console.firebase.google.com](https://console.firebase.google.com) and
+   choose **Create a project**.
+2. Name it `tvs-activity-desk`. Google Analytics is not needed for this app and
+   can remain disabled.
+3. Keep the project on the **Spark / No-cost** plan. Do not link a billing
+   account.
+4. Open **Build → Firestore Database → Create database**.
+5. Choose the standard/native Firestore database, select **Production mode**,
+   and choose the closest available region. The database region cannot be
+   changed later.
+6. Open the Firestore **Rules** tab. Replace its contents with the checked-in
+   [`firestore.rules`](firestore.rules) file and click **Publish**. These rules
+   deny all browser access; only the Django server's service account can read or
+   write data.
 
-Run these commands on your own computer. Every command prints one different
-secret. Save all three in the school's password manager.
+Do not enable Realtime Database, Firebase Hosting, Cloud Functions, or Firebase
+Authentication. This application only needs Firestore.
+
+## 2. Download one Firebase service-account key
+
+1. In Firebase, open **Project settings → Service accounts**.
+2. Select **Firebase Admin SDK → Generate new private key** and confirm.
+3. Keep the downloaded JSON file private. It grants server access to the
+   database. Never commit it, upload it to GitHub, email it, or paste it into
+   chat.
+
+The key is used only as an encrypted Vercel environment variable. If it is ever
+exposed, delete that key in Google Cloud IAM immediately and generate a new one.
+
+## 3. Generate the complete Vercel environment block
+
+From this repository, run the helper with the downloaded JSON path:
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(50))"
-python -c "import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
-python -c "import secrets; print(secrets.token_urlsafe(32))"
+python tools/prepare_vercel_env.py /path/to/firebase-service-account.json
 ```
 
-Use the first value for `DJANGO_SECRET_KEY`, the second for `TVS_DATA_KEY`, and
-the third for `TVS_SETUP_TOKEN`.
-
-`TVS_DATA_KEY` encrypts every form payload and every downloaded backup. If it is
-lost, those records cannot be decrypted. If it is changed after records exist,
-the site will still start but existing records will not open. Keep an offline
-copy controlled by the school.
-
-## 3. Create the PostgreSQL database
-
-1. In the Koyeb control panel, open **Databases** and choose **Create Database**.
-2. Choose PostgreSQL and the **free** instance.
-3. Choose the same region you will use for the web service.
-4. Name it `tvs-activity-desk-db` and create it.
-5. Open its connection details and copy the private/internal connection URL.
-   It begins with `postgresql://`.
-6. Open **Secrets** in Koyeb and create `TVS_DATABASE_URL` with that complete URL.
-
-Do not paste the connection URL into GitHub, `.env`, screenshots, chat, or this
-repository.
-
-## 4. Create the Koyeb secrets
-
-In **Secrets**, create these additional secrets from step 2:
-
-| Koyeb secret name | Value |
-| --- | --- |
-| `TVS_DJANGO_SECRET` | first generated value |
-| `TVS_DATA_KEY` | second generated value |
-| `TVS_SETUP_TOKEN` | third generated value |
-
-## 5. Create the web service
-
-1. Choose **Create Web Service** and select **GitHub**.
-2. Select this repository and the `main` branch.
-3. Select the **Buildpack** builder.
-4. Leave the build command and run command blank. Koyeb reads the checked-in
-   `Procfile`, which collects static files, applies migrations, and starts
-   Gunicorn.
-5. Choose the **Free** web instance and the same region as PostgreSQL.
-6. Set the exposed port to `8000` with protocol HTTP and route `/`.
-7. Set the health check path to `/health/`.
-8. Add the environment variables below using Koyeb's bulk editor:
+On Windows, use `py` instead of `python` if needed. The helper validates the
+Firebase key, creates three independent random secrets, and prints these six
+ready-to-paste lines:
 
 ```text
+DJANGO_SECRET_KEY=...
+TVS_DATA_KEY=...
+TVS_SETUP_TOKEN=...
 DJANGO_DEBUG=false
-DJANGO_ALLOWED_HOSTS={{ KOYEB_PUBLIC_DOMAIN }}
-DJANGO_CSRF_TRUSTED_ORIGINS=https://{{ KOYEB_PUBLIC_DOMAIN }}
-DJANGO_SECRET_KEY={{ secret.TVS_DJANGO_SECRET }}
-TVS_DATA_KEY={{ secret.TVS_DATA_KEY }}
-TVS_SETUP_TOKEN={{ secret.TVS_SETUP_TOKEN }}
-DATABASE_URL={{ secret.TVS_DATABASE_URL }}
 DJANGO_TIME_ZONE=Asia/Kolkata
+FIREBASE_SERVICE_ACCOUNT_JSON={...}
 ```
 
-9. Click **Deploy**. The first build can take several minutes. A successful log
-   ends with Gunicorn listening on port 8000. The health check returns:
+Save the complete output in the school's password manager before continuing.
+`TVS_DATA_KEY` encrypts every form payload and downloaded backup. Losing or
+changing it makes existing records unreadable, so keep a second offline copy
+controlled by the school.
+
+## 4. Import the GitHub repository into Vercel
+
+1. Open [vercel.com/new](https://vercel.com/new), sign in with GitHub, and
+   import the `schlmgmt` repository.
+2. Leave **Root Directory** at the repository root. Vercel detects `manage.py`
+   and configures Django automatically; do not add a build command, output
+   directory, or start command.
+3. Before clicking **Deploy**, expand **Environment Variables**.
+4. Add each of the six names and values printed in step 3. Apply them to
+   **Production**, **Preview**, and **Development** so every build can validate
+   Django's production configuration.
+5. Click **Deploy**.
+
+Preview deployments deliberately return `404 Preview deployment disabled for
+school data safety.` They inherit the secrets so builds succeed, but the guard
+prevents preview URLs from using the live school database. Production remains
+fully available.
+
+The first build installs Python 3.12 dependencies and collects Django static
+files. No SQL migration or persistent filesystem is needed. A successful
+production URL ends in `.vercel.app`.
+
+## 5. Verify the deployment and create the workspace
+
+1. Open `https://your-project.vercel.app/health/`. It should return:
 
 ```json
 {"ok": true, "service": "tvs-activity-desk"}
 ```
 
-## 6. Complete the one-time school setup
-
-1. Open the `.koyeb.app` address shown for the service.
-2. The site redirects to `/setup/` because the database is empty.
+2. Open the production URL. An empty Firestore database redirects to `/setup/`.
 3. Enter the school name and administrator details.
 4. Use a unique master password with at least ten characters, uppercase,
-   lowercase and a number.
-5. Enter the `TVS_SETUP_TOKEN` value from the password manager.
+   lowercase, and a number.
+5. Enter the saved `TVS_SETUP_TOKEN` value.
 6. Create the workspace. The setup page permanently closes after the first
-   account is created.
+   administrator is created.
 7. Open **Users** and create a separate account for each staff member.
 
-Do not share the master administrator account with teachers.
+Do not share the master administrator account. Passwords are Argon2-hashed,
+login attempts lock after five failures, disabled users' signed sessions are
+revoked, and activity payloads are AES-256-GCM encrypted before Firestore sees
+them.
 
 ## Updating the website
 
-Push tested changes to the connected branch. Koyeb builds and deploys them
-automatically. Database migrations run before each Gunicorn start. Check the
-deployment log and `/health/` after every release.
+Push tested changes to `main`. Vercel builds and deploys them automatically.
+After every release, check the production deployment log and `/health/`.
+
+Do not enable preview access against the production Firebase project. If a
+developer needs a working preview, create a separate Firebase project and use
+its service-account key for Preview only before setting
+`TVS_ALLOW_VERCEL_PREVIEW=true` in the Preview environment.
 
 ## Backups and recovery
 
-At least weekly, an administrator should open **Backup**, download the
-`.tvsbackup` file, and copy it to a separate access-controlled drive. The file is
-encrypted, but it still needs to be protected. Keep `TVS_DATA_KEY` separately.
+Firestore's managed backup/restore features are not included in its free quota.
+At least weekly, an administrator should open **Backup**, download the encrypted
+`.tvsbackup` file, and copy it to a separate access-controlled drive. Keep
+`TVS_DATA_KEY` separately.
 
-To restore into a new, empty deployment:
+To restore into an empty Firebase project, install the web requirements locally,
+set the same six environment variables from the password manager, and run:
 
-1. Configure the new service with the exact same `TVS_DATA_KEY`.
-2. Upload the backup temporarily through a Koyeb shell or another secure method.
-3. Run `python manage.py restore_tvs_backup /path/to/file.tvsbackup`.
-4. Delete the uploaded backup after the command succeeds.
+```bash
+python manage.py restore_tvs_backup /path/to/file.tvsbackup
+```
 
-The restore command refuses to touch a non-empty database. `--replace` exists
-for disaster recovery, but it deletes all existing Activity Desk data first.
-Download a fresh backup and verify its key fingerprint before using it.
+The restore command detects Firebase automatically when `DJANGO_DEBUG=false`.
+It refuses to touch a non-empty database. `--replace` exists for disaster
+recovery, but deletes the existing Activity Desk collections first. Download a
+fresh backup and verify its key fingerprint before using it.
 
 ## Custom domain
 
-Add the domain in Koyeb, then update the web service variables:
+Add the domain from the Vercel project's **Settings → Domains** page. Then add
+these production environment variables and redeploy:
 
 ```text
-DJANGO_ALLOWED_HOSTS=activity.example.edu
+DJANGO_ALLOWED_HOSTS=.vercel.app,activity.example.edu
 DJANGO_CSRF_TRUSTED_ORIGINS=https://activity.example.edu
 ```
 
-Koyeb manages HTTPS after DNS verification. Do not disable HTTPS redirect or
-cookie security in production.
+Replace `activity.example.edu` with the exact hostname. Do not include a path or
+trailing slash. Vercel issues and renews HTTPS certificates automatically.
 
 ## Common failures
 
-- **Build succeeds, service restarts:** inspect runtime logs. A missing secret is
-  reported by name before Django starts.
-- **Bad Request (400):** `DJANGO_ALLOWED_HOSTS` does not match the public domain.
+- **Build reports a missing variable:** confirm all six variables from step 3
+  exist in Vercel and are enabled for the environment being built.
+- **Firebase JSON is invalid:** rerun `tools/prepare_vercel_env.py` using the
+  original downloaded JSON and replace the complete Vercel value. Do not remove
+  quotes or backslash characters inside the JSON.
+- **Permission denied from Firestore:** confirm the service-account key belongs
+  to the same Firebase project as the Firestore database and has not been
+  revoked.
+- **Bad Request (400):** remove a stale `DJANGO_ALLOWED_HOSTS` override, or add
+  the exact Vercel/custom hostname to it.
 - **CSRF verification failed:** add the exact HTTPS origin, without a trailing
   slash, to `DJANGO_CSRF_TRUSTED_ORIGINS`.
-- **Records cannot be decrypted:** the deployed `TVS_DATA_KEY` differs from the
-  key used when the records were created. Restore the original secret; do not
-  create a new key.
-- **Missing `DATABASE_URL`:** the service intentionally refuses to start instead
-  of silently storing production data in an ephemeral SQLite file. Verify that
-  the `TVS_DATABASE_URL` secret is attached exactly as shown above.
-- **Database connection error:** verify that `DATABASE_URL` contains the full
-  PostgreSQL URL and that both services are in the same region.
-- **Slow first page:** free services may sleep when idle. Wait for the first
-  request, then refresh once. Data remains in PostgreSQL.
-- **Free allowance warning:** stop and confirm both instance types show `$0`
-  before accepting any change. Free services have no production SLA.
+- **Records cannot be decrypted:** restore the original `TVS_DATA_KEY`; never
+  create a replacement key for an existing database.
+- **Firebase quota exceeded:** Firestore stops the affected operation on Spark
+  rather than charging a card. Check **Firestore → Usage** and wait for the
+  quota reset, or move to an approved paid plan.
+- **Preview URL shows a 404:** this is intentional. Use the production URL.
 
-## Local production check
+## Local development
 
-Before deployment, run:
+Local development continues to use SQLite so no developer needs Firebase:
 
 ```bash
 python -m venv .venv-web
 source .venv-web/bin/activate
 pip install -r requirements.txt
 python manage.py migrate
-python manage.py test
-python manage.py check --deploy
 python manage.py runserver
 ```
 
-For local development without environment variables, Django uses a local SQLite
-database and development-only keys. Never copy that database to production.
+The local setup token is `local-setup`. Never deploy with local defaults. Run
+the full test suite with `python manage.py test desk tests`.

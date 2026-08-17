@@ -4,22 +4,16 @@ import base64
 import csv
 import io
 import json
-from datetime import timedelta
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 
 from django.contrib import messages
-from django.contrib.auth import login as auth_login
-from django.contrib.auth import logout as auth_logout
-from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.core.paginator import Paginator
-from django.db import IntegrityError, connection, transaction
-from django.db.models import Q, QuerySet
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -40,17 +34,18 @@ from .forms import (
     StrongPasswordChangeForm,
     UserCreateForm,
 )
-from .models import ActivityRecord, AuditLog, ModuleControl, Profile, SiteSettings
+from .models import ActivityRecord
+from .store import AlreadyInitialized, DuplicateUsername, get_store
 
 
 def initialized() -> bool:
-    return User.objects.exists()
+    return get_store().initialized()
 
 
-def role_of(user: User) -> str:
+def role_of(user) -> str:
     try:
         return user.desk_profile.role
-    except Profile.DoesNotExist as exc:
+    except (AttributeError, ObjectDoesNotExist) as exc:
         raise PermissionDenied("This account has no Activity Desk role.") from exc
 
 
@@ -65,26 +60,25 @@ def admin_required(view: Callable) -> Callable:
     return wrapped
 
 
-def audit(user: User | None, action: str, target: str = "") -> None:
-    AuditLog.objects.create(user=user, action=action, target=target[:255])
+def audit(user, action: str, target: str = "") -> None:
+    get_store().audit(user, action, target)
 
 
 def module_enabled(module_key: str) -> bool:
-    control = ModuleControl.objects.filter(module_key=module_key).first()
-    return True if control is None else control.enabled
+    return get_store().module_states().get(module_key, True)
 
 
-def allowed_modules(user: User, include_disabled: bool = False):
+def allowed_modules(user, include_disabled: bool = False):
     modules = modules_for_role(role_of(user))
     if include_disabled or role_of(user) == "administrator":
         return modules
-    disabled = set(ModuleControl.objects.filter(enabled=False).values_list("module_key", flat=True))
+    disabled = {key for key, enabled in get_store().module_states().items() if not enabled}
     return [module for module in modules if module.key not in disabled]
 
 
-def records_for(user: User) -> QuerySet[ActivityRecord]:
-    queryset = ActivityRecord.objects.select_related("owner", "owner__desk_profile")
-    return queryset if role_of(user) == "administrator" else queryset.filter(owner=user)
+def records_for(user) -> list:
+    records = get_store().list_records()
+    return records if role_of(user) == "administrator" else [record for record in records if str(record.owner_id) == str(user.id)]
 
 
 def record_to_dict(record: ActivityRecord) -> dict[str, Any]:
@@ -102,6 +96,16 @@ def record_to_dict(record: ActivityRecord) -> dict[str, Any]:
     }
 
 
+def _sign_in(request: HttpRequest, user) -> None:
+    request.session.flush()
+    request.session["tvs_user_id"] = str(user.id)
+    request.session["tvs_session_version"] = getattr(user.desk_profile, "session_version", 1)
+
+
+def _sign_out(request: HttpRequest) -> None:
+    request.session.flush()
+
+
 @require_GET
 def home(request: HttpRequest) -> HttpResponse:
     if not initialized():
@@ -116,25 +120,16 @@ def setup(request: HttpRequest) -> HttpResponse:
     form = SetupForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         try:
-            with transaction.atomic():
-                if initialized():
-                    raise IntegrityError("Setup was completed in another request.")
-                user = User.objects.create_user(
-                    username=form.cleaned_data["username"],
-                    password=form.cleaned_data["password"],
-                )
-                Profile.objects.create(
-                    user=user,
-                    display_name=form.cleaned_data["display_name"].strip(),
-                    role="administrator",
-                    must_change_password=False,
-                )
-                SiteSettings.objects.create(school_name=form.cleaned_data["school_name"].strip())
-                audit(user, "system_setup", "cloud_database")
-        except IntegrityError:
+            user = get_store().create_initial_admin(
+                school_name=form.cleaned_data["school_name"].strip(),
+                username=form.cleaned_data["username"],
+                password=form.cleaned_data["password"],
+                display_name=form.cleaned_data["display_name"].strip(),
+            )
+        except (AlreadyInitialized, DuplicateUsername):
             messages.error(request, "Setup has already been completed. Sign in instead.")
             return redirect("login")
-        auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        _sign_in(request, user)
         messages.success(request, "Secure workspace created. Add staff accounts from Users.")
         return redirect("dashboard")
     return render(request, "desk/setup.html", {"form": form, "setup_mode": True})
@@ -149,7 +144,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
     form = LoginForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         username = form.cleaned_data["username"].strip()
-        user = User.objects.filter(username__iexact=username).select_related("desk_profile").first()
+        user = get_store().get_user_by_username(username)
         generic_error = "Invalid username or password."
         if not user or not user.is_active:
             form.add_error(None, generic_error)
@@ -160,17 +155,11 @@ def login_view(request: HttpRequest) -> HttpResponse:
                 seconds = max(1, int((profile.locked_until - now).total_seconds()))
                 form.add_error(None, f"Account temporarily locked. Try again in {seconds} seconds.")
             elif not user.check_password(form.cleaned_data["password"]):
-                profile.failed_attempts += 1
-                if profile.failed_attempts >= 5:
-                    profile.failed_attempts = 0
-                    profile.locked_until = now + timedelta(minutes=5)
-                profile.save(update_fields=("failed_attempts", "locked_until", "updated_at"))
+                get_store().register_login_failure(user)
                 form.add_error(None, generic_error)
             else:
-                profile.failed_attempts = 0
-                profile.locked_until = None
-                profile.save(update_fields=("failed_attempts", "locked_until", "updated_at"))
-                auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+                get_store().clear_login_failures(user)
+                _sign_in(request, user)
                 audit(user, "login", user.username)
                 next_url = request.POST.get("next", "")
                 if next_url.startswith("/") and not next_url.startswith("//"):
@@ -183,7 +172,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
 def logout_view(request: HttpRequest) -> HttpResponse:
     if request.user.is_authenticated:
         audit(request.user, "logout", request.user.username)
-    auth_logout(request)
+    _sign_out(request)
     return redirect("login")
 
 
@@ -192,14 +181,9 @@ def logout_view(request: HttpRequest) -> HttpResponse:
 def change_password(request: HttpRequest) -> HttpResponse:
     form = StrongPasswordChangeForm(request.user, request.POST or None)
     if request.method == "POST" and form.is_valid():
-        user = form.save()
-        profile = user.desk_profile
-        profile.must_change_password = False
-        profile.failed_attempts = 0
-        profile.locked_until = None
-        profile.save(update_fields=("must_change_password", "failed_attempts", "locked_until", "updated_at"))
-        update_session_auth_hash(request, user)
-        audit(user, "password_changed", user.username)
+        get_store().update_password(request.user, form.cleaned_data["new_password1"], must_change=False)
+        request.session["tvs_session_version"] = getattr(request.user.desk_profile, "session_version", 1)
+        audit(request.user, "password_changed", request.user.username)
         messages.success(request, "Your password has been changed.")
         return redirect("dashboard")
     return render(request, "desk/change_password.html", {"form": form})
@@ -213,9 +197,9 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         modules = [module for module in modules if query.casefold() in module.name.casefold()]
     records = records_for(request.user)
     counts = {
-        "total": records.count(),
-        "submitted": records.filter(status=ActivityRecord.SUBMITTED).count(),
-        "draft": records.filter(status=ActivityRecord.DRAFT).count(),
+        "total": len(records),
+        "submitted": sum(record.status == ActivityRecord.SUBMITTED for record in records),
+        "draft": sum(record.status == ActivityRecord.DRAFT for record in records),
     }
     grouped: list[tuple[str, list[Any]]] = []
     for role, label in ROLE_LABELS.items():
@@ -225,9 +209,11 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     return render(request, "desk/dashboard.html", {"counts": counts, "module_groups": grouped, "query": query})
 
 
-def _load_record_for_user(user: User, record_id: str) -> ActivityRecord:
-    record = get_object_or_404(ActivityRecord.objects.select_related("owner"), pk=record_id)
-    if role_of(user) != "administrator" and record.owner_id != user.id:
+def _load_record_for_user(user, record_id: str):
+    record = get_store().get_record(record_id)
+    if record is None:
+        raise Http404("Record not found")
+    if role_of(user) != "administrator" and str(record.owner_id) != str(user.id):
         raise PermissionDenied
     return record
 
@@ -264,19 +250,17 @@ def record_form(request: HttpRequest, module_key: str, record_id: str | None = N
     )
     if request.method == "POST" and form.is_valid():
         payload = form.payload()
-        with transaction.atomic():
-            if record is None:
-                record = ActivityRecord(
-                    module_key=module.key,
-                    module_name=module.name,
-                    role=module.role,
-                    owner=request.user,
-                )
-            record.status = ActivityRecord.SUBMITTED if submitted else ActivityRecord.DRAFT
-            record.event_date = form.cleaned_data.get("event_date")
-            record.set_data(payload)
-            record.save()
-            audit(request.user, "record_updated" if record_id else "record_created", f"{module.key}:{record.id}")
+        record = get_store().save_record(
+            record=record,
+            module_key=module.key,
+            module_name=module.name,
+            role=module.role,
+            owner=request.user,
+            status=ActivityRecord.SUBMITTED if submitted else ActivityRecord.DRAFT,
+            event_date=form.cleaned_data.get("event_date"),
+            payload=payload,
+        )
+        audit(request.user, "record_updated" if record_id else "record_created", f"{module.key}:{record.id}")
         messages.success(request, f"{module.name} saved as {'submitted' if submitted else 'a draft'}.")
         return redirect("records")
     return render(
@@ -288,23 +272,26 @@ def record_form(request: HttpRequest, module_key: str, record_id: str | None = N
 
 @login_required
 def records(request: HttpRequest) -> HttpResponse:
-    queryset = records_for(request.user)
+    record_rows = records_for(request.user)
     query = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip()
     module_key = request.GET.get("module", "").strip()
     if query:
-        queryset = queryset.filter(
-            Q(module_name__icontains=query)
-            | Q(owner__username__icontains=query)
-            | Q(owner__desk_profile__display_name__icontains=query)
-        )
+        folded = query.casefold()
+        record_rows = [
+            record
+            for record in record_rows
+            if folded in record.module_name.casefold()
+            or folded in record.owner.username.casefold()
+            or folded in record.owner.desk_profile.display_name.casefold()
+        ]
     if status in {ActivityRecord.DRAFT, ActivityRecord.SUBMITTED}:
-        queryset = queryset.filter(status=status)
+        record_rows = [record for record in record_rows if record.status == status]
     available = allowed_modules(request.user, include_disabled=True)
     allowed_keys = {module.key for module in available}
     if module_key in allowed_keys:
-        queryset = queryset.filter(module_key=module_key)
-    page = Paginator(queryset, 40).get_page(request.GET.get("page"))
+        record_rows = [record for record in record_rows if record.module_key == module_key]
+    page = Paginator(record_rows, 40).get_page(request.GET.get("page"))
     return render(
         request,
         "desk/records.html",
@@ -318,15 +305,15 @@ def reports(request: HttpRequest) -> HttpResponse:
 
 
 def _filtered_export_records(request: HttpRequest) -> list[dict[str, Any]]:
-    queryset = records_for(request.user)
+    record_rows = records_for(request.user)
     status = request.GET.get("status", "")
     module_key = request.GET.get("module", "")
     allowed_keys = {module.key for module in allowed_modules(request.user, include_disabled=True)}
     if status in {ActivityRecord.DRAFT, ActivityRecord.SUBMITTED}:
-        queryset = queryset.filter(status=status)
+        record_rows = [record for record in record_rows if record.status == status]
     if module_key in allowed_keys:
-        queryset = queryset.filter(module_key=module_key)
-    return [record_to_dict(record) for record in queryset]
+        record_rows = [record for record in record_rows if record.module_key == module_key]
+    return [record_to_dict(record) for record in record_rows]
 
 
 @login_required
@@ -378,32 +365,33 @@ def export_records(request: HttpRequest, file_type: str) -> HttpResponse:
 def users(request: HttpRequest) -> HttpResponse:
     form = UserCreateForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        with transaction.atomic():
-            user = User.objects.create_user(
+        try:
+            user = get_store().create_user(
                 username=form.cleaned_data["username"],
                 password=form.cleaned_data["password"],
-            )
-            Profile.objects.create(
-                user=user,
                 display_name=form.cleaned_data["display_name"].strip(),
                 role=form.cleaned_data["role"],
             )
+        except DuplicateUsername:
+            form.add_error("username", "That username already exists.")
+        else:
             audit(request.user, "user_created", user.username)
-        messages.success(request, f"Account created for {user.desk_profile.display_name}.")
-        return redirect("users")
-    user_rows = User.objects.select_related("desk_profile").order_by("desk_profile__display_name")
+            messages.success(request, f"Account created for {user.desk_profile.display_name}.")
+            return redirect("users")
+    user_rows = get_store().list_users()
     return render(request, "desk/users.html", {"form": form, "users": user_rows})
 
 
 @admin_required
 @require_POST
-def toggle_user(request: HttpRequest, user_id: int) -> HttpResponse:
-    target = get_object_or_404(User.objects.select_related("desk_profile"), pk=user_id)
+def toggle_user(request: HttpRequest, user_id: str) -> HttpResponse:
+    target = get_store().get_user(user_id)
+    if target is None:
+        raise Http404("User not found")
     if target == request.user:
         messages.error(request, "You cannot deactivate your own account.")
     else:
-        target.is_active = not target.is_active
-        target.save(update_fields=("is_active",))
+        get_store().set_user_active(target, not target.is_active)
         action = "user_activated" if target.is_active else "user_deactivated"
         audit(request.user, action, target.username)
         messages.success(request, f"{target.desk_profile.display_name} is now {'active' if target.is_active else 'inactive'}.")
@@ -412,18 +400,13 @@ def toggle_user(request: HttpRequest, user_id: int) -> HttpResponse:
 
 @admin_required
 @require_http_methods(["GET", "POST"])
-def reset_password(request: HttpRequest, user_id: int) -> HttpResponse:
-    target = get_object_or_404(User.objects.select_related("desk_profile"), pk=user_id)
+def reset_password(request: HttpRequest, user_id: str) -> HttpResponse:
+    target = get_store().get_user(user_id)
+    if target is None:
+        raise Http404("User not found")
     form = PasswordResetForm(request.POST or None, user=target)
     if request.method == "POST" and form.is_valid():
-        target.set_password(form.cleaned_data["password"])
-        target.save(update_fields=("password",))
-        target.desk_profile.failed_attempts = 0
-        target.desk_profile.locked_until = None
-        target.desk_profile.must_change_password = target != request.user
-        target.desk_profile.save(
-            update_fields=("failed_attempts", "locked_until", "must_change_password", "updated_at")
-        )
+        get_store().update_password(target, form.cleaned_data["password"], must_change=target != request.user)
         audit(request.user, "password_reset", target.username)
         messages.success(request, f"Password reset for {target.desk_profile.display_name}.")
         return redirect("users")
@@ -438,13 +421,12 @@ def form_controls(request: HttpRequest) -> HttpResponse:
         module = MODULES.get(module_key)
         if not module:
             raise Http404
-        control, _ = ModuleControl.objects.get_or_create(module_key=module_key)
-        control.enabled = request.POST.get("enabled") == "true"
-        control.save()
-        audit(request.user, "form_enabled" if control.enabled else "form_disabled", module_key)
-        messages.success(request, f"{module.name} {'enabled' if control.enabled else 'disabled'}.")
+        enabled = request.POST.get("enabled") == "true"
+        get_store().set_module_enabled(module_key, enabled)
+        audit(request.user, "form_enabled" if enabled else "form_disabled", module_key)
+        messages.success(request, f"{module.name} {'enabled' if enabled else 'disabled'}.")
         return redirect(f"{reverse('form_controls')}#{module_key}")
-    states = {row.module_key: row.enabled for row in ModuleControl.objects.all()}
+    states = get_store().module_states()
     groups = [
         (ROLE_LABELS[role], [(module, states.get(module.key, True)) for module in modules])
         for role, modules in MODULES_BY_ROLE.items()
@@ -454,7 +436,7 @@ def form_controls(request: HttpRequest) -> HttpResponse:
 
 @admin_required
 def audit_log(request: HttpRequest) -> HttpResponse:
-    page = Paginator(AuditLog.objects.select_related("user", "user__desk_profile"), 100).get_page(request.GET.get("page"))
+    page = Paginator(get_store().list_audit(), 100).get_page(request.GET.get("page"))
     return render(request, "desk/audit.html", {"page": page})
 
 
@@ -468,7 +450,7 @@ def backup(request: HttpRequest) -> HttpResponse:
 @require_POST
 def backup_download(request: HttpRequest) -> HttpResponse:
     users_data = []
-    for user in User.objects.select_related("desk_profile").all():
+    for user in get_store().list_users():
         users_data.append(
             {
                 "username": user.username,
@@ -480,7 +462,7 @@ def backup_download(request: HttpRequest) -> HttpResponse:
             }
         )
     records_data = []
-    for record in ActivityRecord.objects.all():
+    for record in get_store().list_records():
         records_data.append(
             {
                 "id": str(record.id),
@@ -502,9 +484,12 @@ def backup_download(request: HttpRequest) -> HttpResponse:
         "version": 1,
         "created_at": timezone.now().isoformat(),
         "key_fingerprint": key_fingerprint(),
-        "school_name": SiteSettings.school_name_value(),
+        "school_name": get_store().school_name(),
         "users": users_data,
-        "module_controls": list(ModuleControl.objects.values("module_key", "enabled")),
+        "module_controls": [
+            {"module_key": module_key, "enabled": enabled}
+            for module_key, enabled in get_store().module_states().items()
+        ],
         "records": records_data,
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -526,7 +511,5 @@ def backup_download(request: HttpRequest) -> HttpResponse:
 
 @require_GET
 def health(request: HttpRequest) -> JsonResponse:
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT 1")
-        cursor.fetchone()
+    get_store().health()
     return JsonResponse({"ok": True, "service": "tvs-activity-desk"})

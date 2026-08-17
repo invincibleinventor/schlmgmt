@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All access goes through the authenticated Django server on Vercel.
+    // The Firebase Admin SDK is controlled by IAM and bypasses client rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

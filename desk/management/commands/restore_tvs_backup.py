@@ -4,13 +4,10 @@ import base64
 import json
 from pathlib import Path
 
-from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
-from django.utils.dateparse import parse_date, parse_datetime
 
 from desk.crypto import data_key, key_fingerprint
-from desk.models import ActivityRecord, AuditLog, ModuleControl, Profile, SiteSettings
+from desk.store import AlreadyInitialized, get_store
 from tvs_dms.security import SecurityError, decrypt_bytes
 
 
@@ -47,56 +44,13 @@ class Command(BaseCommand):
             raise CommandError("Unsupported TVS backup version.")
         if payload.get("key_fingerprint") != key_fingerprint():
             raise CommandError("TVS_DATA_KEY fingerprint does not match the backup.")
-        if User.objects.exists() and not options["replace"]:
-            raise CommandError("Database is not empty. Use --replace only after confirming a destructive restore.")
+        try:
+            record_count, user_count = get_store().restore(payload, replace=options["replace"])
+        except AlreadyInitialized as exc:
+            raise CommandError(
+                "Database is not empty. Use --replace only after confirming a destructive restore."
+            ) from exc
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CommandError(f"Backup data is invalid: {exc}") from exc
 
-        with transaction.atomic():
-            if options["replace"]:
-                AuditLog.objects.all().delete()
-                ActivityRecord.objects.all().delete()
-                ModuleControl.objects.all().delete()
-                SiteSettings.objects.all().delete()
-                User.objects.all().delete()
-
-            users: dict[str, User] = {}
-            for item in payload.get("users", []):
-                user = User.objects.create(
-                    username=item["username"],
-                    password=item["password_hash"],
-                    is_active=bool(item.get("active", True)),
-                )
-                Profile.objects.create(
-                    user=user,
-                    display_name=item["display_name"],
-                    role=item["role"],
-                    must_change_password=bool(item.get("must_change_password", True)),
-                )
-                users[user.username] = user
-
-            SiteSettings.objects.create(school_name=payload["school_name"])
-            ModuleControl.objects.bulk_create(
-                [ModuleControl(module_key=item["module_key"], enabled=item["enabled"]) for item in payload.get("module_controls", [])]
-            )
-            for item in payload.get("records", []):
-                owner = users.get(item["owner"])
-                if owner is None:
-                    raise CommandError(f"Backup record refers to missing user: {item['owner']}")
-                record = ActivityRecord.objects.create(
-                    id=item["id"],
-                    module_key=item["module_key"],
-                    module_name=item["module_name"],
-                    role=item["role"],
-                    owner=owner,
-                    status=item["status"],
-                    event_date=parse_date(item["event_date"]) if item.get("event_date") else None,
-                    payload_nonce=base64.b64decode(item["nonce"]),
-                    payload_ciphertext=base64.b64decode(item["ciphertext"]),
-                    payload_tag=base64.b64decode(item["tag"]),
-                )
-                ActivityRecord.objects.filter(pk=record.pk).update(
-                    created_at=parse_datetime(item["created_at"]),
-                    updated_at=parse_datetime(item["updated_at"]),
-                )
-            AuditLog.objects.create(action="backup_restored", target=path.name[:255])
-
-        self.stdout.write(self.style.SUCCESS(f"Restored {len(payload.get('records', []))} records and {len(users)} users."))
+        self.stdout.write(self.style.SUCCESS(f"Restored {record_count} records and {user_count} users."))

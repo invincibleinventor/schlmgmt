@@ -1,15 +1,16 @@
+from django.core.exceptions import ImproperlyConfigured
 from django.db import OperationalError, ProgrammingError
 
 from tvs_dms.config import APP_NAME, APP_VERSION
 from tvs_dms.forms import ROLE_LABELS
 
-from .models import SiteSettings
+from .store import get_store
 
 
 def workspace(request):
     try:
-        school_name = SiteSettings.school_name_value()
-    except (OperationalError, ProgrammingError):
+        school_name = get_store().school_name()
+    except (ImproperlyConfigured, OperationalError, ProgrammingError):
         school_name = "School Activity Management"
     profile = getattr(request.user, "desk_profile", None) if request.user.is_authenticated else None
     return {

@@ -53,6 +53,7 @@ TVS-activity-records-*.xlsx
 .env.*
 !.env.example
 *.local
+.vercel/
 
 # IDE and editor files
 .idea/

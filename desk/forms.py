@@ -1,20 +1,30 @@
 from __future__ import annotations
 
 import hmac
-from datetime import date, datetime
+import re
+from datetime import date
 from typing import Any
 
 from django import forms
 from django.conf import settings
 from django.contrib.auth import password_validation
-from django.contrib.auth.forms import PasswordChangeForm
-from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 
 from tvs_dms.forms import ROLE_LABELS, Field, Module
 
+from .store import get_store
 
-def validate_strong_password(password: str, user: User | None = None) -> str:
+USERNAME_PATTERN = re.compile(r"^[\w.@+-]+$", re.UNICODE)
+
+
+def validate_username(username: str) -> str:
+    value = username.strip()
+    if not value or not USERNAME_PATTERN.fullmatch(value):
+        raise ValidationError("Use only letters, numbers, and @/./+/-/_ characters.")
+    return value
+
+
+def validate_strong_password(password: str, user: Any | None = None) -> str:
     password_validation.validate_password(password, user=user)
     if not any(char.isupper() for char in password):
         raise ValidationError("Include at least one uppercase letter.")
@@ -34,8 +44,8 @@ class SetupForm(forms.Form):
     setup_token = forms.CharField(widget=forms.PasswordInput, label="Deployment setup token")
 
     def clean_username(self) -> str:
-        username = self.cleaned_data["username"].strip()
-        if User.objects.filter(username__iexact=username).exists():
+        username = validate_username(self.cleaned_data["username"])
+        if get_store().username_exists(username):
             raise ValidationError("That username already exists.")
         return username
 
@@ -68,8 +78,8 @@ class UserCreateForm(forms.Form):
     confirm_password = forms.CharField(widget=forms.PasswordInput, label="Confirm password")
 
     def clean_username(self) -> str:
-        username = self.cleaned_data["username"].strip()
-        if User.objects.filter(username__iexact=username).exists():
+        username = validate_username(self.cleaned_data["username"])
+        if get_store().username_exists(username):
             raise ValidationError("That username already exists.")
         return username
 
@@ -87,7 +97,7 @@ class PasswordResetForm(forms.Form):
     password = forms.CharField(widget=forms.PasswordInput, label="New password")
     confirm_password = forms.CharField(widget=forms.PasswordInput, label="Confirm new password")
 
-    def __init__(self, *args: Any, user: User, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, user: Any, **kwargs: Any) -> None:
         self.user = user
         super().__init__(*args, **kwargs)
 
@@ -101,9 +111,29 @@ class PasswordResetForm(forms.Form):
         return values
 
 
-class StrongPasswordChangeForm(PasswordChangeForm):
+class StrongPasswordChangeForm(forms.Form):
+    old_password = forms.CharField(widget=forms.PasswordInput, label="Current password")
+    new_password1 = forms.CharField(widget=forms.PasswordInput, label="New password")
+    new_password2 = forms.CharField(widget=forms.PasswordInput, label="Confirm new password")
+
+    def __init__(self, user: Any, *args: Any, **kwargs: Any) -> None:
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_old_password(self) -> str:
+        value = self.cleaned_data["old_password"]
+        if not self.user.check_password(value):
+            raise ValidationError("Your current password is incorrect.")
+        return value
+
     def clean_new_password1(self) -> str:
         return validate_strong_password(self.cleaned_data["new_password1"], self.user)
+
+    def clean(self) -> dict[str, Any]:
+        values = super().clean()
+        if values.get("new_password1") and values.get("new_password2") != values["new_password1"]:
+            self.add_error("new_password2", "Passwords do not match.")
+        return values
 
 
 def _web_field(definition: Field, *, submitted: bool) -> forms.Field:
@@ -142,12 +172,14 @@ class ActivityEntryForm(forms.Form):
             if definition.kind == "date" and normalized.get(definition.key):
                 value = normalized[definition.key]
                 if isinstance(value, str):
-                    for pattern in ("%d-%m-%Y", "%Y-%m-%d"):
-                        try:
-                            normalized[definition.key] = datetime.strptime(value, pattern).date()
-                            break
-                        except ValueError:
-                            continue
+                    try:
+                        if value[2:3] == "-":
+                            day, month, year = (int(part) for part in value.split("-"))
+                            normalized[definition.key] = date(year, month, day)
+                        else:
+                            normalized[definition.key] = date.fromisoformat(value)
+                    except (TypeError, ValueError):
+                        pass
         super().__init__(*args, initial=normalized, **kwargs)
         for definition in module.fields:
             self.fields[definition.key] = _web_field(definition, submitted=submitted)
