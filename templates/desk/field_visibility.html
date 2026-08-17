@@ -1,0 +1,69 @@
+{% extends 'desk/base.html' %}
+{% block title %}Field visibility · {{ app_name }}{% endblock %}
+{% block page_title %}Field visibility{% endblock %}
+{% block content %}
+  <section class="card visibility-topbar">
+    <div>
+      <span class="eyebrow">Viewing as</span>
+      <h2>{{ module.name }} · {{ role_label }}</h2>
+      <p class="muted">{{ hidden_count }} field{{ hidden_count|pluralize }} hidden. {{ hidden_analyses }} of {{ analysis_count }} available analyses are suppressed as a result.</p>
+    </div>
+    <form method="get" class="filter-bar">
+      <input type="hidden" name="module" value="{{ module.key }}">
+      <div class="field">
+        <label for="visibility-role">Role</label>
+        <select id="visibility-role" name="role">
+          {% for key, label in roles %}
+            <option value="{{ key }}"{% if key == role %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="button-row"><button class="button button-primary" type="submit">Switch role</button></div>
+    </form>
+  </section>
+
+  <div class="visibility-layout">
+    <nav class="visibility-forms" aria-label="Forms">
+      <span class="eyebrow">Forms</span>
+      <ul>
+        {% for item in modules %}
+          <li>
+            <a class="visibility-form-link{% if item.key == module.key %} is-active{% endif %}"
+               href="{% url 'field_visibility' %}?module={{ item.key }}&amp;role={{ role }}">{{ item.name }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </nav>
+
+    <section class="card visibility-fields">
+      <span class="eyebrow">{{ tier_label }} tier</span>
+      <h2>Fields on this form</h2>
+      <p class="muted">Turning a field off hides it from {{ role_label }} everywhere — reports, tables and exports alike. It can only ever hide; it cannot grant access this tier does not already have.</p>
+      <div class="control-grid">
+        {% for row in rows %}
+          <form method="post" class="control-row">
+            {% csrf_token %}
+            <input type="hidden" name="module_key" value="{{ module.key }}">
+            <input type="hidden" name="role" value="{{ role }}">
+            <input type="hidden" name="field_key" value="{{ row.field.key }}">
+            <input type="hidden" name="hidden" value="{% if row.hidden %}false{% else %}true{% endif %}">
+            <div>
+              <strong>{{ row.field.label }}</strong>
+              <span class="muted">{{ row.field.key }} · {{ row.field.kind }}{% if row.field.required %} · required{% endif %}</span>
+              {% if row.blocked_by_tier %}
+                <span class="muted">Already withheld at this tier: it names individuals, so this tier sees it only in aggregate.</span>
+              {% endif %}
+            </div>
+            {% if row.blocked_by_tier %}
+              <span class="status status-draft">Withheld</span>
+            {% else %}
+              <button class="toggle{% if not row.hidden %} toggle-on{% endif %}" type="submit"
+                      aria-label="{% if row.hidden %}Show{% else %}Hide{% endif %} {{ row.field.label }} for {{ role_label }}"
+                      aria-pressed="{{ row.hidden|yesno:'false,true' }}"><span></span></button>
+            {% endif %}
+          </form>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+{% endblock %}

@@ -33,6 +33,10 @@ ROLE_LABELS = {
 LEVELS = ("Pre-Primary", "Primary", "Middle", "Secondary", "Senior Secondary", "All")
 STANDARDS = ("Nursery", "LKG", "UKG", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "All")
 SHIFTS = ("Morning", "Afternoon", "General", "Not applicable")
+# One shared scale across every IMPACT hub: the distribution and segment-gap
+# analyzers compare ratings across forms, which only works if the labels match.
+RATINGS = ("Excellent", "Good", "Satisfactory", "Needs improvement", "Poor")
+EXTENT = ("None", "Minimal", "Moderate", "High", "Very high")
 
 DATE = Field("event_date", "Activity date", "date", True, hint="DD-MM-YYYY")
 LEVEL = Field("level", "Level", "choice", False, LEVELS)
@@ -68,7 +72,14 @@ _MODULE_SPECS: Dict[str, List[Tuple[str, str, Tuple[Field, ...]]]] = {
     "class_teacher": [
         ("assembly_console", "Assembly Console", activity_fields(
             f("assembly_type", "Assembly type", "choice", True, ("Class", "House", "School", "Special")),
-            f("theme", "Theme / topic", required=True), f("conducted_by", "Conducted by"))),
+            f("theme", "Theme / topic", required=True), f("conducted_by", "Conducted by"),
+            f("students_expected", "Students on roll", "integer"),
+            f("programme_flow", "Flow of the programme", "longtext", True),
+            f("flow_rating", "Rating: overall quality / flow", "choice", True, RATINGS),
+            f("student_performance", "Rating: student performance", "choice", False, RATINGS),
+            f("values_shared", "Values shared", hint="The value or message the assembly carried"),
+            f("feedback", "Feedback received", "longtext"),
+            f("challenges", "Challenges faced", "longtext"))),
         ("no_bag_day", "No Bag Day", activity_fields(
             f("event", "Event", required=True), f("activities", "Activities completed", "longtext", True),
             f("activity_count", "Number of activities", "integer"))),
@@ -88,11 +99,32 @@ _MODULE_SPECS: Dict[str, List[Tuple[str, str, Tuple[Field, ...]]]] = {
         ("cca_edu_sports", "CCA or Edu Sports", activity_fields(
             f("activity_type", "Activity type", "choice", True, ("CCA", "Edu Sports")), f("activity", "Activity", required=True), f("coach", "Coach / teacher"))),
         ("class_project", "Class Project", simple_activity("Project title")),
-        ("dayboarding", "Dayboarding", activity_fields(f("session", "Session / activity", required=True), f("staff", "Staff in charge"))),
+        ("dayboarding", "Dayboarding", activity_fields(
+            f("session", "Session / activity", required=True), f("staff", "Staff in charge"),
+            f("attendance", "Students availed", "integer", True, hint="Count who actually ate"),
+            f("expected_attendance", "Students expected", "integer", hint="Drives the utilisation ratio"),
+            f("food_wastage", "Food wastage observed", "choice", True, EXTENT),
+            f("wastage_notes", "What was left over", "longtext", hint="Which items, so preferences can be read"),
+            f("rating_food", "Rating: food served", "choice", True, RATINGS),
+            f("rating_student_feedback", "Rating: student feedback", "choice", True, RATINGS),
+            f("rating_staff_feedback", "Rating: staff feedback", "choice", False, RATINGS),
+            f("rating_waiting_time", "Rating: waiting time", "choice", True, RATINGS),
+            f("waiting_minutes", "Longest wait (minutes)", "integer"),
+            f("challenges", "Problems observed / challenges faced", "longtext", True))),
         ("enrichment", "Enrichment", simple_activity("Enrichment topic")),
         ("event_details", "Event Details", activity_fields(f("event", "Event name", required=True), f("organiser", "Organiser"), f("venue", "Venue"))),
         ("faca_details", "FACA Details", simple_activity("FACA activity")),
-        ("field_trip", "Field Trip", activity_fields(f("destination", "Destination", required=True), f("purpose", "Purpose", "longtext", True), f("staff_count", "Accompanying staff", "integer"))),
+        ("field_trip", "Field Trip", activity_fields(
+            f("destination", "Destination", required=True), f("purpose", "Purpose", "longtext", True),
+            f("venue_planned", "Venue planned", hint="Record the plan when it differs from where the trip went"),
+            f("staff_count", "Accompanying staff", "integer", True),
+            f("students_expected", "Students planned", "integer"),
+            f("transport_mode", "Transport", "choice", False, ("School bus", "Hired coach", "Public transport", "Walk", "Other")),
+            f("budget", "Cost incurred", "integer"),
+            f("learning_outcome", "Learning outcome", "longtext"),
+            f("student_engagement", "Rating: student engagement", "choice", False, RATINGS),
+            f("feedback", "Feedback received", "longtext"),
+            f("challenges", "Challenges / concerns faced", "longtext", True))),
         ("quality_circle", "Quality Circle", simple_activity("Improvement area")),
         ("self_learning", "Self Learning", simple_activity("Learning topic", facilitator=False)),
         ("student_empowerment", "Student Empowerment", simple_activity("Empowerment topic")),
@@ -108,12 +140,43 @@ _MODULE_SPECS: Dict[str, List[Tuple[str, str, Tuple[Field, ...]]]] = {
         ("life_skill_classes", "Life Skill Classes", simple_activity("Life skill topic")),
         ("parenting_session", "Parenting Session and Orientation", simple_activity("Session topic")),
         ("special_educator", "Special Educator", activity_fields(f("student_reference", "Student name / ID", required=True), f("support_area", "Support area", required=True), f("intervention", "Intervention / follow-up", "longtext", True), audience=False)),
+        # Inventory rather than an activity: one entry per item per month, so
+        # stock movement and pending indents are readable per department.
+        ("stationary", "Stationary", activity_fields(
+            f("item", "Item", required=True),
+            f("department", "Department", required=True, hint="Who the stock is issued to"),
+            f("category", "Category", "choice", False, ("Paper", "Writing", "Printing", "Housekeeping", "Lab", "Sports", "Other")),
+            f("opening_stock", "Opening stock", "integer", True),
+            f("received", "Received", "integer", True),
+            f("issued", "Issued", "integer", True),
+            f("closing_stock", "Closing stock", "integer", hint="Leave blank to derive from opening + received − issued"),
+            f("pending_items", "Pending / to be indented", "longtext"),
+            f("pending_count", "Pending quantity", "integer"),
+            f("unit_cost", "Unit cost", "integer"),
+            f("receipt_reference", "Receipt / bill reference"),
+            f("supplier", "Supplier"),
+            f("stock_status", "Stock status", "choice", True, ("Sufficient", "Reorder soon", "Critically low", "Out of stock")),
+            f("challenges", "Issues / challenges", "longtext"),
+            audience=False)),
     ],
     "academic_supervisor": [
         ("club_activities", "Club Activities", simple_activity("Club / activity")),
         ("competition_details", "Competition Details", activity_fields(f("competition", "Competition", required=True), f("level_of_event", "Competition level"), f("result", "Result / achievement"))),
         ("curriculum_status", "Curriculum Status", activity_fields(f("subject", "Subject", required=True), f("planned_units", "Planned units", "integer"), f("completed_units", "Completed units", "integer"), f("status_notes", "Status notes", "longtext"), audience=False)),
-        ("exam_details", "Exam Details", activity_fields(f("exam", "Exam name", required=True), f("subjects", "Subjects", "longtext"), f("students_appeared", "Students appeared", "integer"))),
+        ("exam_details", "Exam Details", activity_fields(
+            f("exam", "Exam name", required=True), f("subjects", "Subjects", "longtext"),
+            f("subject", "Subject examined", hint="One subject per entry keeps the portions report readable"),
+            f("students_appeared", "Students appeared", "integer", True),
+            f("students_expected", "Students on roll", "integer", True),
+            f("absentees", "Absentee roll numbers", "longtext", hint="Withheld from the strategic view"),
+            f("od_count", "On-duty (OD) students", "integer"),
+            f("od_students", "OD roll numbers and reason", "longtext"),
+            f("portion_covered", "Portions covered (%)", "integer", hint="Syllabus completed for this subject and standard"),
+            f("qp_status", "Question paper availability", "choice", True, ("Ready", "In preparation", "Delayed", "Not started")),
+            f("paper_arrangement", "Paper arrangement", "choice", False, ("Complete", "Partial", "Pending")),
+            f("invigilators", "Invigilators deployed", "integer"),
+            f("invigilation_notes", "Invigilation / hall arrangement", "longtext"),
+            f("challenges", "Issues / challenges faced", "longtext", True))),
         ("finlit", "Finlit", simple_activity("Financial literacy topic")),
         ("function_celebrations", "Function / Celebrations", simple_activity("Function / celebration")),
         ("lab_activities", "Lab Activities", activity_fields(f("subject", "Subject / lab", required=True), f("experiment", "Experiment / activity", required=True), f("teacher", "Teacher in charge"))),

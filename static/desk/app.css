@@ -172,8 +172,11 @@ tbody tr:hover { background: #fafcfe; }
 .security-note p { margin: 4px 0 0; font-size: .86rem; }
 
 @media (max-width: 980px) {
-  .sidebar { transform: translateX(-100%); transition: transform .2s ease; }
-  .sidebar.open { transform: translateX(0); box-shadow: 18px 0 50px rgba(4,23,41,.25); }
+  /* visibility, not just the transform: a translated-off sidebar still holds its
+     links in the tab order, so keyboard users tab into an invisible menu.
+     It is delayed on close so the slide-out is still seen. */
+  .sidebar { transform: translateX(-100%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; }
+  .sidebar.open { transform: translateX(0); visibility: visible; box-shadow: 18px 0 50px rgba(4,23,41,.25); transition-delay: 0s; }
   .mobile-header { position: sticky; top: 0; z-index: 20; display: flex; height: 58px; padding: 0 18px; align-items: center; justify-content: space-between; color: #fff; background: var(--navy-950); }
   .mobile-brand { font-weight: 700; text-decoration: none; }
   .mobile-brand span { margin-right: 5px; font-size: 1.25rem; font-weight: 900; }
@@ -224,11 +227,130 @@ tbody tr:hover { background: #fafcfe; }
   tbody tr { padding: 13px 16px; border-bottom: 1px solid var(--border); }
   td { display: grid; grid-template-columns: 110px 1fr; padding: 5px 0; border: 0; gap: 10px; }
   td::before { color: var(--muted); content: attr(data-label); font-size: .7rem; font-weight: 750; text-transform: uppercase; }
+  /* Label-less cells hold the row's action link, which belongs at the trailing
+     edge — except a full-width empty-state message, which must stay flush left. */
   td:not([data-label]) { display: block; padding-top: 10px; text-align: right; }
+  td.table-empty { text-align: left; }
   .table-summary, .info-strip { align-items: start; flex-direction: column; }
   .control-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .001ms !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+}
+
+/* --- page header actions -------------------------------------------------
+   Actions were previously a bare block child of .page-header, so multiple
+   buttons stacked instead of sitting side by side and the <=520px width rule
+   only reached a single direct-child button. */
+.page-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.page-actions:empty { display: none; }
+
+/* --- reports: filter + export bar ---------------------------------------- */
+.report-controls { display: flex; align-items: end; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.report-controls .filter-bar { grid-template-columns: repeat(auto-fit, minmax(150px, max-content)); margin-bottom: 0; }
+.report-exports { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; }
+.report-exports .eyebrow { margin-bottom: 0; text-align: right; }
+.report-exports .button { min-height: 36px; padding: 6px 14px; font-size: .85rem; }
+
+/* --- insight cards -------------------------------------------------------- */
+.insight-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.insight-card { position: relative; padding: 16px 18px 18px; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.insight-card::before { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--border); content: ""; }
+.insight-good::before { background: var(--green); }
+.insight-watch::before { background: var(--amber); }
+.insight-alert::before { background: var(--red); }
+.insight-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.insight-head h3 { margin: 0; font-size: .96rem; line-height: 1.3; }
+.insight-headline { flex-shrink: 0; color: var(--navy-900); font-size: 1.05rem; font-weight: 850; letter-spacing: -.02em; white-space: nowrap; }
+.insight-alert .insight-headline { color: var(--red); }
+.insight-watch .insight-headline { color: var(--amber); }
+.insight-good .insight-headline { color: var(--green); }
+.insight-card p { margin-bottom: 8px; color: var(--muted); font-size: .84rem; }
+.insight-action { padding: 8px 10px; border-radius: 7px; background: var(--blue-50); color: var(--navy-900) !important; font-weight: 600; }
+.insight-table { margin-top: 10px; max-height: 320px; overflow-y: auto; }
+.insight-table table { font-size: .8rem; }
+.insight-table th, .insight-table td { padding: 6px 8px; }
+.insight-table .table-summary { padding: 8px 0 0; border: 0; }
+
+/* --- alerts panel --------------------------------------------------------- */
+.alert-card { border-left: 4px solid var(--red); }
+.alert-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.alert-list li { padding: 12px 14px; border-radius: 9px; background: var(--red-bg); }
+.alert-list strong, .alert-list span, .alert-list em { display: block; }
+.alert-list strong { color: var(--navy-950); }
+.alert-list span { margin-top: 3px; color: #6b3a34; font-size: .85rem; }
+.alert-list em { margin-top: 6px; color: var(--red); font-size: .82rem; font-style: normal; font-weight: 700; }
+
+/* --- SWOT ----------------------------------------------------------------- */
+.swot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.swot-card { padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--blue-50); }
+.swot-card h3 { margin: 0 0 8px; font-size: .9rem; letter-spacing: .02em; text-transform: uppercase; }
+.swot-card ul { margin: 0; padding-left: 18px; }
+.swot-card li { margin-bottom: 5px; color: var(--ink); font-size: .84rem; }
+.swot-strength { background: var(--green-bg); }
+.swot-strength h3 { color: var(--green); }
+.swot-weakness h3, .swot-opportunity h3 { color: var(--amber); }
+.swot-weakness, .swot-opportunity { background: var(--amber-bg); }
+.swot-threat { background: var(--red-bg); }
+.swot-threat h3 { color: var(--red); }
+
+.stat-unit { color: var(--muted); font-size: .8rem; font-weight: 600; }
+
+/* --- charts (inline SVG; CSP forbids external libraries and inline styles) - */
+.chart-wrap { margin: 10px 0 4px; }
+.chart { display: block; width: 100%; height: auto; max-height: 230px; }
+.chart-axis { stroke: var(--border); stroke-width: 1; }
+.chart-label { fill: var(--muted); font-size: 10px; font-family: inherit; }
+.chart-value { fill: var(--navy-800); font-size: 9.5px; font-weight: 700; font-family: inherit; }
+.chart-axis-value { fill: var(--muted); font-size: 9.5px; font-family: inherit; }
+.chart-bar-rect { fill: var(--navy-700); }
+.chart-line-path { fill: none; stroke: var(--navy-700); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-area { fill: var(--blue-100); opacity: .75; }
+.chart-point { fill: var(--navy-800); stroke: #fff; stroke-width: 1.4; }
+.chart-legend-text { fill: var(--ink); font-size: 11px; font-family: inherit; }
+.chart-slice { stroke: #fff; stroke-width: 1.5; }
+.chart-series-0 { fill: #225382; }
+.chart-series-1 { fill: #1d7a58; }
+.chart-series-2 { fill: #9b6410; }
+.chart-series-3 { fill: #6d4aa8; }
+.chart-series-4 { fill: #b42318; }
+.chart-series-5 { fill: #4d7c9c; }
+.chart-line .chart-series-0 { fill: var(--navy-700); }
+
+/* --- field visibility console --------------------------------------------- */
+.visibility-topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.visibility-topbar h2 { margin-bottom: .3rem; }
+.visibility-topbar .filter-bar { grid-template-columns: minmax(190px, max-content) auto; margin-bottom: 0; }
+.visibility-layout { display: grid; grid-template-columns: 260px 1fr; align-items: start; gap: 16px; margin-top: 16px; }
+.visibility-forms { max-height: 72vh; padding: 16px 14px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+.visibility-forms ul { margin: 0; padding: 0; list-style: none; }
+.visibility-form-link { display: block; padding: 8px 10px; border-radius: 7px; color: var(--ink); font-size: .85rem; text-decoration: none; }
+.visibility-form-link:hover { background: var(--blue-50); }
+.visibility-form-link.is-active { color: #fff; background: var(--navy-800); font-weight: 700; }
+.visibility-fields .control-row { flex-wrap: wrap; }
+.visibility-fields .control-row > div { min-width: 0; flex: 1; }
+
+@media (max-width: 980px) {
+  .visibility-layout { grid-template-columns: 1fr; }
+  .visibility-forms { max-height: 240px; }
+}
+
+@media (max-width: 720px) {
+  .insight-grid, .swot-grid { grid-template-columns: 1fr; }
+  .report-controls, .visibility-topbar { align-items: stretch; flex-direction: column; }
+  .report-exports { align-items: stretch; }
+  .report-exports .eyebrow { text-align: left; }
+  .report-exports .button { flex: 1; }
+  /* Insight tables are dense two-column data; the global <=520px card-stacking
+     rule turns them into unreadable ribbons, so keep them scrolling instead. */
+  .insight-table { overflow-x: auto; }
+}
+
+@media (max-width: 520px) {
+  .page-actions, .page-actions .button { width: 100%; }
+  .insight-table table, .insight-table thead, .insight-table tbody,
+  .insight-table tr, .insight-table th, .insight-table td { display: revert; }
+  .insight-table thead { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  .insight-head { align-items: flex-start; flex-direction: column; gap: 2px; }
 }

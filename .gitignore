@@ -77,3 +77,6 @@ Desktop.ini
 *.temp
 *.bak
 *.orig
+
+# Serena language-server cache
+.serena/

@@ -20,7 +20,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from tvs_dms.forms import ROLE_LABELS
 
 from .domain import AuditData, ProfileData, RecordData, UserData
-from .models import ActivityRecord, AuditLog, ModuleControl, Profile, SiteSettings
+from .models import ActivityRecord, AuditLog, FieldVisibility, ModuleControl, Profile, SiteSettings
 
 _FIREBASE_APP_LOCK = threading.Lock()
 
@@ -232,6 +232,22 @@ class DjangoStore:
         control, _ = ModuleControl.objects.get_or_create(module_key=module_key)
         control.enabled = enabled
         control.save()
+
+    def hidden_fields(self) -> dict[tuple[str, str], set[str]]:
+        result: dict[tuple[str, str], set[str]] = {}
+        for row in FieldVisibility.objects.all():
+            result.setdefault((row.module_key, row.role), set()).add(row.field_key)
+        return result
+
+    def set_field_hidden(self, module_key: str, role: str, field_key: str, hidden: bool) -> None:
+        if hidden:
+            FieldVisibility.objects.get_or_create(
+                module_key=module_key, role=role, field_key=field_key
+            )
+        else:
+            FieldVisibility.objects.filter(
+                module_key=module_key, role=role, field_key=field_key
+            ).delete()
 
     def list_records(self) -> list[ActivityRecord]:
         return list(ActivityRecord.objects.select_related("owner", "owner__desk_profile").order_by("-updated_at"))
@@ -563,6 +579,33 @@ class FirestoreStore:
         self.db.collection("module_controls").document(module_key).set(
             {"enabled": enabled, "updated_at": timezone.now()}
         )
+
+    def hidden_fields(self) -> dict[tuple[str, str], set[str]]:
+        result: dict[tuple[str, str], set[str]] = {}
+        for snapshot in self.db.collection("field_visibility").stream():
+            data = snapshot.to_dict() or {}
+            module_key = data.get("module_key")
+            role = data.get("role")
+            field_key = data.get("field_key")
+            if module_key and role and field_key:
+                result.setdefault((module_key, role), set()).add(field_key)
+        return result
+
+    def set_field_hidden(self, module_key: str, role: str, field_key: str, hidden: bool) -> None:
+        document = self.db.collection("field_visibility").document(
+            f"{module_key}__{role}__{field_key}"
+        )
+        if hidden:
+            document.set(
+                {
+                    "module_key": module_key,
+                    "role": role,
+                    "field_key": field_key,
+                    "updated_at": timezone.now(),
+                }
+            )
+        else:
+            document.delete()
 
     def _record_from_snapshot(self, snapshot, users: dict[str, UserData] | None = None) -> RecordData | None:
         if snapshot is None or not snapshot.exists:

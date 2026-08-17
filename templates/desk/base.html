@@ -24,11 +24,12 @@
       <nav aria-label="Primary navigation">
         <a href="{% url 'dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
         <a href="{% url 'records' %}" {% if request.resolver_match.url_name == 'records' or request.resolver_match.url_name == 'record_edit' or request.resolver_match.url_name == 'record_new' %}aria-current="page"{% endif %}>Records</a>
-        <a href="{% url 'reports' %}" {% if request.resolver_match.url_name == 'reports' %}aria-current="page"{% endif %}>Reports &amp; exports</a>
+        <a href="{% url 'reports' %}" {% if request.resolver_match.url_name == 'reports' or request.resolver_match.url_name == 'module_report' %}aria-current="page"{% endif %}>Reports &amp; analysis</a>
         {% if current_profile.role == 'administrator' %}
           <span class="nav-label">Administration</span>
           <a href="{% url 'users' %}" {% if request.resolver_match.url_name == 'users' or request.resolver_match.url_name == 'reset_password' %}aria-current="page"{% endif %}>Users</a>
           <a href="{% url 'form_controls' %}" {% if request.resolver_match.url_name == 'form_controls' %}aria-current="page"{% endif %}>Form controls</a>
+          <a href="{% url 'field_visibility' %}" {% if request.resolver_match.url_name == 'field_visibility' %}aria-current="page"{% endif %}>Field visibility</a>
           <a href="{% url 'audit_log' %}" {% if request.resolver_match.url_name == 'audit_log' %}aria-current="page"{% endif %}>Audit log</a>
           <a href="{% url 'backup' %}" {% if request.resolver_match.url_name == 'backup' %}aria-current="page"{% endif %}>Backup</a>
         {% endif %}
@@ -53,13 +54,16 @@
           <span class="eyebrow">{{ school_name }}</span>
           <h1>{% block page_title %}Activity Desk{% endblock %}</h1>
         </div>
-        {% block page_actions %}{% endblock %}
+        <div class="page-actions">{% block page_actions %}{% endblock %}</div>
       </header>
     {% endif %}
 
     {% if messages %}
-      <div class="messages" aria-live="polite">
-        {% for message in messages %}<div class="message message-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}
+      {# These arrive with a full page load after a redirect, so aria-live would
+         announce nothing — a live region only reports changes to a region that
+         was already in the DOM. role on each message is what gets read. #}
+      <div class="messages">
+        {% for message in messages %}<div class="message message-{{ message.tags|default:'info' }}" role="{% if 'error' in message.tags %}alert{% else %}status{% endif %}">{{ message }}</div>{% endfor %}
       </div>
     {% endif %}
 

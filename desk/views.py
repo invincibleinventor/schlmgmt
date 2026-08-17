@@ -21,10 +21,24 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from tvs_dms.exporter import tabular
+from tvs_dms.exporter import _safe_cell, tabular
 from tvs_dms.forms import MODULES, MODULES_BY_ROLE, ROLE_LABELS, modules_for_role
 from tvs_dms.security import SecurityError, encrypt_bytes
 
+from .analytics import (
+    TIER_LABELS,
+    build_report,
+    can_see,
+    catalogue_for,
+    detail_rows,
+    parse_window,
+    report_rows,
+    select_observations,
+    tier_of,
+)
+from .analytics.access import is_identity_field
+from .analytics.pdf import render_report_pdf
+from .analytics.visibility import redact_row
 from .crypto import data_key, key_fingerprint
 from .forms import (
     ActivityEntryForm,
@@ -81,8 +95,14 @@ def records_for(user) -> list:
     return records if role_of(user) == "administrator" else [record for record in records if str(record.owner_id) == str(user.id)]
 
 
-def record_to_dict(record: ActivityRecord) -> dict[str, Any]:
+def record_to_dict(record: ActivityRecord, role: str | None = None) -> dict[str, Any]:
     profile = getattr(record.owner, "desk_profile", None)
+    values = record.get_data()
+    # The visibility console is deny-only but must bind on every path out of the
+    # store, not just reports; an unredacted export would reinstate a field the
+    # school deliberately hid.
+    if role is not None:
+        values = redact_row(values, record.module_key, role)
     return {
         "id": str(record.id),
         "module_key": record.module_key,
@@ -92,7 +112,7 @@ def record_to_dict(record: ActivityRecord) -> dict[str, Any]:
         "owner_name": profile.display_name if profile else record.owner.username,
         "created_at": record.created_at.isoformat(),
         "updated_at": record.updated_at.isoformat(),
-        "data": record.get_data(),
+        "data": values,
     }
 
 
@@ -301,7 +321,231 @@ def records(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def reports(request: HttpRequest) -> HttpResponse:
-    return render(request, "desk/reports.html", {"modules": allowed_modules(request.user, include_disabled=True)})
+    """Report index: every module this user can analyse, with its access tier."""
+    role = role_of(request.user)
+    modules = allowed_modules(request.user, include_disabled=True)
+    return render(
+        request,
+        "desk/reports.html",
+        {
+            "modules": modules,
+            "tier": tier_of(role),
+            "tier_label": TIER_LABELS.get(tier_of(role), ""),
+            "windows": REPORT_WINDOWS,
+        },
+    )
+
+
+REPORT_WINDOWS = (
+    ("30", "Last 30 days"),
+    ("90", "Last 90 days"),
+    ("180", "Last 6 months"),
+    ("365", "Last 12 months"),
+    ("all", "All records"),
+)
+
+
+def _report_context(request: HttpRequest, module_key: str):
+    """Shared by the HTML report view and every export of it."""
+    role = role_of(request.user)
+    allowed = {module.key: module for module in allowed_modules(request.user, include_disabled=True)}
+    module = allowed.get(module_key)
+    if module is None:
+        raise Http404
+
+    window = request.GET.get("window", "90")
+    standard = request.GET.get("standard", "")
+    since, period_label = parse_window(window)
+    observations = select_observations(
+        get_store().list_records(),
+        module,
+        viewer_id=str(request.user.id),
+        tier=tier_of(role),
+        since=since,
+        standard=standard,
+    )
+    report = build_report(module, observations, role=role, period_label=period_label)
+    return module, report, window, standard
+
+
+@login_required
+@require_GET
+def module_report(request: HttpRequest, module_key: str) -> HttpResponse:
+    module, report, window, standard = _report_context(request, module_key)
+    standards = sorted(
+        {
+            str(field_choice)
+            for field in module.fields
+            if field.key == "standard"
+            for field_choice in field.choices
+        }
+    )
+    return render(
+        request,
+        "desk/module_report.html",
+        {
+            "module": module,
+            "report": report,
+            "window": window,
+            "standard": standard,
+            "standards": standards,
+            "windows": REPORT_WINDOWS,
+            "tier_label": TIER_LABELS.get(report.tier, ""),
+            "is_admin": role_of(request.user) == "administrator",
+        },
+    )
+
+
+@login_required
+@require_GET
+def export_report(request: HttpRequest, module_key: str, file_type: str) -> HttpResponse:
+    module, report, _window, _standard = _report_context(request, module_key)
+    timestamp = timezone.localtime().strftime("%Y%m%d-%H%M")
+    slug = module.key.replace("_", "-")
+    headers, rows = report_rows(report)
+
+    if file_type == "csv":
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerows([[_safe_cell(cell) for cell in row] for row in rows])
+        response = HttpResponse("﻿" + output.getvalue(), content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="TVS-{slug}-report-{timestamp}.csv"'
+    elif file_type == "xlsx":
+        response = _report_workbook(report, headers, rows, slug, timestamp)
+    elif file_type == "pdf":
+        if role_of(request.user) != "administrator":
+            raise PermissionDenied("PDF export is restricted to administrators.")
+        payload = render_report_pdf(
+            report,
+            get_store().school_name(),
+            timezone.localtime().strftime("%d %b %Y %H:%M"),
+            ROLE_LABELS.get(report.role, report.role),
+        )
+        response = HttpResponse(payload, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="TVS-{slug}-report-{timestamp}.pdf"'
+    else:
+        raise Http404
+
+    audit(request.user, f"export_report_{file_type}", f"{module.key}: {len(rows)} analyses")
+    return response
+
+
+def _report_workbook(report, headers, rows, slug: str, timestamp: str) -> HttpResponse:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Insights"
+    _write_sheet(sheet, headers, rows)
+    for title, block_headers, block_rows in detail_rows(report):
+        name = _sheet_name(title, {ws.title for ws in workbook.worksheets})
+        _write_sheet(workbook.create_sheet(name), block_headers, block_rows)
+    output_bytes = io.BytesIO()
+    workbook.save(output_bytes)
+    response = HttpResponse(
+        output_bytes.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="TVS-{slug}-report-{timestamp}.xlsx"'
+    return response
+
+
+def _sheet_name(title: str, taken: set[str]) -> str:
+    # Excel sheet names: 31 chars, and none of : \ / ? * [ ]
+    cleaned = "".join(character for character in title if character not in ":\\/?*[]")[:28] or "Detail"
+    candidate, suffix = cleaned, 2
+    while candidate in taken:
+        candidate = f"{cleaned[:26]} {suffix}"
+        suffix += 1
+    return candidate
+
+
+def _write_sheet(sheet, headers, rows) -> None:
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:{get_column_letter(max(1, len(headers)))}1"
+    fill = PatternFill("solid", fgColor="183B66")
+    for column, header in enumerate(headers, 1):
+        cell = sheet.cell(1, column, str(header))
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.fill = fill
+        cell.alignment = Alignment(vertical="center")
+    for row_number, row in enumerate(rows, 2):
+        for column, value in enumerate(row, 1):
+            sheet.cell(row_number, column, _safe_cell(value))
+    for column, header in enumerate(headers, 1):
+        lengths = [len(str(row[column - 1])) for row in rows[:200] if column - 1 < len(row)]
+        sheet.column_dimensions[get_column_letter(column)].width = min(
+            60, max([12, len(str(header)) + 2] + lengths)
+        )
+
+
+@admin_required
+@require_http_methods(["GET", "POST"])
+def field_visibility(request: HttpRequest) -> HttpResponse:
+    """Super-admin console: pick a form, pick a role, toggle fields on and off.
+
+    Deny-only by construction — a toggle can hide a field the tier matrix
+    already allows, never reveal one it withholds.
+    """
+    store = get_store()
+    modules = list(MODULES.values())
+    module_key = request.GET.get("module") or request.POST.get("module_key") or modules[0].key
+    module = MODULES.get(module_key)
+    if module is None:
+        raise Http404
+    role = request.GET.get("role") or request.POST.get("role") or module.role
+    if role not in ROLE_LABELS:
+        raise Http404
+
+    if request.method == "POST":
+        field_key = request.POST.get("field_key", "")
+        if field_key not in {field.key for field in module.fields}:
+            raise Http404
+        hidden = request.POST.get("hidden") == "true"
+        store.set_field_hidden(module.key, role, field_key, hidden)
+        audit(
+            request.user,
+            "field_visibility",
+            f"{module.key}/{role}/{field_key} -> {'hidden' if hidden else 'visible'}",
+        )
+        messages.success(
+            request,
+            f"{'Hidden' if hidden else 'Restored'} “{field_key}” for {ROLE_LABELS[role]}.",
+        )
+        return redirect(f"{reverse('field_visibility')}?module={module.key}&role={role}")
+
+    hidden_keys = store.hidden_fields().get((module.key, role), set())
+    tier = tier_of(role)
+    rows = [
+        {
+            "field": field,
+            "hidden": field.key in hidden_keys,
+            "identity": is_identity_field(field.key),
+            "blocked_by_tier": tier == "decision" and is_identity_field(field.key),
+        }
+        for field in module.fields
+    ]
+    catalogue = [entry for entry in catalogue_for(module) if can_see(tier, entry.tier)]
+    hidden_analyses = sum(
+        1 for entry in catalogue if set(entry.fields_used) & hidden_keys
+    )
+
+    return render(
+        request,
+        "desk/field_visibility.html",
+        {
+            "modules": modules,
+            "module": module,
+            "roles": [(key, label) for key, label in ROLE_LABELS.items()],
+            "role": role,
+            "role_label": ROLE_LABELS[role],
+            "tier": tier,
+            "tier_label": TIER_LABELS.get(tier, ""),
+            "rows": rows,
+            "hidden_count": len(hidden_keys),
+            "analysis_count": len(catalogue),
+            "hidden_analyses": hidden_analyses,
+        },
+    )
 
 
 def _filtered_export_records(request: HttpRequest) -> list[dict[str, Any]]:
@@ -313,7 +557,8 @@ def _filtered_export_records(request: HttpRequest) -> list[dict[str, Any]]:
         record_rows = [record for record in record_rows if record.status == status]
     if module_key in allowed_keys:
         record_rows = [record for record in record_rows if record.module_key == module_key]
-    return [record_to_dict(record) for record in record_rows]
+    role = role_of(request.user)
+    return [record_to_dict(record, role) for record in record_rows]
 
 
 @login_required

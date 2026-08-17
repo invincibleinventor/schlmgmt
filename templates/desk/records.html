@@ -8,6 +8,8 @@
     <div class="field"><label for="records-status">Status</label><select id="records-status" name="status"><option value="">All statuses</option><option value="submitted" {% if status == 'submitted' %}selected{% endif %}>Submitted</option><option value="draft" {% if status == 'draft' %}selected{% endif %}>Draft</option></select></div>
     <button class="button button-primary" type="submit">Apply filters</button>
   </form>
+  {# No hidden `page` input: changing a filter must return to page 1, not carry
+     the old page number into a differently sized result set. #}
 
   <div class="card table-card">
     <div class="table-summary"><strong>{{ page.paginator.count }} record{{ page.paginator.count|pluralize }}</strong><span>Most recently updated first</span></div>
@@ -31,9 +33,9 @@
       </div>
       {% if page.has_other_pages %}
         <nav class="pagination" aria-label="Records pages">
-          {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ query|urlencode }}&status={{ status }}&module={{ selected_module }}">Previous</a>{% endif %}
+          {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&amp;q={{ query|urlencode }}&amp;status={{ status|urlencode }}&amp;module={{ selected_module|urlencode }}">Previous</a>{% endif %}
           <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
-          {% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ query|urlencode }}&status={{ status }}&module={{ selected_module }}">Next</a>{% endif %}
+          {% if page.has_next %}<a href="?page={{ page.next_page_number }}&amp;q={{ query|urlencode }}&amp;status={{ status|urlencode }}&amp;module={{ selected_module|urlencode }}">Next</a>{% endif %}
         </nav>
       {% endif %}
     {% else %}<div class="empty-state"><h2>No records found</h2><p>Create a form entry or change the filters above.</p></div>{% endif %}

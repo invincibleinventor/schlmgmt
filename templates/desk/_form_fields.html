@@ -1,11 +1,11 @@
-{% if form.non_field_errors %}
+{% load desk_tags %}{% if form.non_field_errors %}
   <div class="form-alert" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>
 {% endif %}
 {% for field in form %}
   <div class="field {% if field.errors %}field-error{% endif %}">
-    <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span aria-hidden="true"> *</span>{% endif %}</label>
-    {{ field }}
-    {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
-    {% for error in field.errors %}<span class="error-text">{{ error }}</span>{% endfor %}
+    <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span aria-hidden="true"> *</span><span class="sr-only"> (required)</span>{% endif %}</label>
+    {{ field|accessible_field }}
+    {% if field.help_text %}<small id="{{ field.id_for_label }}-help">{{ field.help_text }}</small>{% endif %}
+    {% for error in field.errors %}<span class="error-text" id="{{ field.id_for_label }}-error">{{ error }}</span>{% endfor %}
   </div>
 {% endfor %}

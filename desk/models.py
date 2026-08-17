@@ -50,6 +50,26 @@ class ModuleControl(models.Model):
         return self.module_key
 
 
+class FieldVisibility(models.Model):
+    """Deny-only override: hides a field from a role that would otherwise see it.
+
+    A row existing means "hidden". Absence means "use the tier default". The
+    console can never grant access the tier matrix withholds; see
+    METHODOLOGY.md section 5.
+    """
+
+    module_key = models.CharField(max_length=80, db_index=True)
+    role = models.CharField(max_length=32, choices=ROLE_CHOICES)
+    field_key = models.CharField(max_length=80)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("module_key", "role", "field_key")
+
+    def __str__(self) -> str:
+        return f"{self.module_key}/{self.role}/{self.field_key}"
+
+
 class ActivityRecord(models.Model):
     DRAFT = "draft"
     SUBMITTED = "submitted"

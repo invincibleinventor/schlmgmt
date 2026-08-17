@@ -1,0 +1,130 @@
+{% extends 'desk/base.html' %}
+{% load desk_tags %}
+{% block title %}{{ module.name }} report · {{ app_name }}{% endblock %}
+{% block page_title %}{{ module.name }}{% endblock %}
+{% block page_actions %}
+  <a class="button button-secondary" href="{% url 'reports' %}">All reports</a>
+{% endblock %}
+{% block content %}
+  <section class="card report-controls">
+    <form method="get" class="filter-bar">
+      <div class="field">
+        <label for="report-window">Period</label>
+        <select id="report-window" name="window">
+          {% for value, label in windows %}
+            <option value="{{ value }}"{% if value == window %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if standards %}
+        <div class="field">
+          <label for="report-standard">Standard</label>
+          <select id="report-standard" name="standard">
+            <option value="">All standards</option>
+            {% for item in standards %}
+              <option value="{{ item }}"{% if item == standard %} selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endif %}
+      <div class="button-row">
+        <button class="button button-primary" type="submit">Apply</button>
+      </div>
+    </form>
+    <div class="report-exports">
+      <span class="eyebrow">{{ tier_label }} view · {{ report.record_count }} record{{ report.record_count|pluralize }} {{ report.period_label }}</span>
+      <div class="button-row">
+        <a class="button button-secondary" href="{% url 'export_report' module.key 'xlsx' %}?window={{ window }}&amp;standard={{ standard }}">XLSX</a>
+        <a class="button button-secondary" href="{% url 'export_report' module.key 'csv' %}?window={{ window }}&amp;standard={{ standard }}">CSV</a>
+        {% if is_admin %}
+          <a class="button button-primary" href="{% url 'export_report' module.key 'pdf' %}?window={{ window }}&amp;standard={{ standard }}">PDF</a>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% if report.record_count == 0 %}
+    <section class="card">
+      <p class="empty-state">No records match this period, so there is nothing to analyse yet. Widen the period, or file the entries first.</p>
+    </section>
+  {% else %}
+
+    {% if report.headline_stats %}
+      <div class="stat-grid">
+        {% for insight in report.headline_stats %}
+          <article class="stat-card stat-{{ insight.severity }}">
+            <span class="eyebrow">{{ insight.title }}</span>
+            <strong>{{ insight.display }}</strong>
+            <p class="muted">{{ insight.detail }}</p>
+          </article>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if report.alerts %}
+      <section class="card alert-card">
+        <span class="eyebrow">Red flags</span>
+        <h2>{{ report.alerts|length }} thing{{ report.alerts|length|pluralize }} need attention</h2>
+        <ul class="alert-list">
+          {% for insight in report.alerts %}
+            <li>
+              <strong>{{ insight.title }} — {{ insight.display }}</strong>
+              <span>{{ insight.detail }}</span>
+              {% if insight.action %}<em>{{ insight.action }}</em>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    {% if report.swot %}
+      <section class="card">
+        <span class="eyebrow">Strategic view</span>
+        <h2>SWOT</h2>
+        <div class="swot-grid">
+          {% for quadrant in report.swot %}
+            <article class="swot-card swot-{{ quadrant.slug }}">
+              <h3>{{ quadrant.label }}</h3>
+              <ul>{% for point in quadrant.points %}<li>{{ point }}</li>{% endfor %}</ul>
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+
+    {% for category, insights in report.by_category %}
+      <section class="card">
+        <span class="eyebrow">{{ insights|length }} analysis point{{ insights|length|pluralize }}</span>
+        <h2 class="section-heading">{{ category }}</h2>
+        <div class="insight-grid">
+          {% for insight in insights %}
+            <article class="insight-card insight-{{ insight.severity }}">
+              <header class="insight-head">
+                <h3>{{ insight.title }}</h3>
+                <span class="insight-headline">{{ insight.display }}</span>
+              </header>
+              <p>{{ insight.detail }}</p>
+              {% if insight.action %}<p class="insight-action">{{ insight.action }}</p>{% endif %}
+              {% if insight.chart %}<div class="chart-wrap">{% chart insight.chart %}</div>{% endif %}
+              {% if insight.table %}
+                <div class="table-scroll insight-table">
+                  <table>
+                    <thead><tr>{% for column in insight.table.0.keys %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+                    <tbody>
+                      {% for row in insight.table|slice:":12" %}
+                        <tr>{% for value in row.values %}<td>{{ value }}</td>{% endfor %}</tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  {% if insight.table|length > 12 %}
+                    <p class="table-summary">Showing 12 of {{ insight.table|length }} rows. The full table is in the spreadsheet export.</p>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  {% endif %}
+{% endblock %}

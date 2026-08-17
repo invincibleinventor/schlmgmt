@@ -52,9 +52,9 @@ class DatabaseTests(unittest.TestCase):
     def test_all_requested_modules_exist(self):
         self.assertEqual(5, len(MODULES_BY_ROLE["class_teacher"]))
         self.assertEqual(14, len(MODULES_BY_ROLE["catalyst_member"]))
-        self.assertEqual(7, len(MODULES_BY_ROLE["office"]))
+        self.assertEqual(8, len(MODULES_BY_ROLE["office"]))
         self.assertEqual(32, len(MODULES_BY_ROLE["academic_supervisor"]))
-        self.assertEqual(58, len(MODULES))
+        self.assertEqual(59, len(MODULES))
 
     def test_user_login_record_and_reset(self):
         user_id = self.db.create_user(self.admin, "teacher1", "Teacher One", "class_teacher", "TeacherPass123")
