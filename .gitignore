@@ -43,6 +43,7 @@ activity-desk-web.db-shm
 activity-desk-web.db-wal
 *.tvsbackup
 startup-error.log
+firebase-debug.log
 staticfiles/
 exports/
 TVS-activity-records-*.csv
