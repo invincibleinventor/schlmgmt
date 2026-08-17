@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-import os
 import uuid
 from datetime import timedelta
 from functools import lru_cache
@@ -757,9 +756,6 @@ class _Snapshot:
 
 @lru_cache(maxsize=1)
 def get_store():
-    use_firebase = bool(getattr(settings, "FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()) and (
-        not settings.DEBUG or os.getenv("TVS_USE_FIREBASE", "").strip().lower() in {"1", "true", "yes", "on"}
-    )
-    if use_firebase:
+    if getattr(settings, "TVS_USE_FIREBASE", False):
         return FirestoreStore()
     return DjangoStore()

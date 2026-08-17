@@ -85,6 +85,9 @@ WSGI_APPLICATION = "tvs_web.wsgi.application"
 FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
 if not DEBUG and not FIREBASE_SERVICE_ACCOUNT_JSON:
     raise ImproperlyConfigured("FIREBASE_SERVICE_ACCOUNT_JSON must be set in production.")
+TVS_USE_FIREBASE = bool(FIREBASE_SERVICE_ACCOUNT_JSON.strip()) and (
+    not DEBUG or env_bool("TVS_USE_FIREBASE")
+)
 TVS_ALLOW_VERCEL_PREVIEW = env_bool("TVS_ALLOW_VERCEL_PREVIEW")
 
 DATABASES = {
